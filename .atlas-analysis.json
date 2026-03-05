@@ -1,0 +1,236 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "RxJS",
+  "projectDescription": "A reactive programming library for JavaScript that provides composable asynchronous and event-based programs using observable sequences.",
+  "theme": "palm",
+  "primaryColor": "#d6138d",
+  "lightColor": "#97238c",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/observable",
+              "concepts/observer",
+              "concepts/subscription",
+              "concepts/operators",
+              "concepts/subject",
+              "concepts/scheduler"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/importing",
+              "guides/higher-order-observables",
+              "guides/testing",
+              "guides/core-semantics"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/v6-to-v7",
+              "migration/breaking-changes",
+              "migration/deprecations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview"
+            ]
+          },
+          {
+            "group": "Creation Operators",
+            "pages": [
+              "api/creation/ajax",
+              "api/creation/bindCallback",
+              "api/creation/bindNodeCallback",
+              "api/creation/combineLatest",
+              "api/creation/concat",
+              "api/creation/defer",
+              "api/creation/forkJoin",
+              "api/creation/from",
+              "api/creation/fromEvent",
+              "api/creation/fromEventPattern",
+              "api/creation/generate",
+              "api/creation/interval",
+              "api/creation/merge",
+              "api/creation/of",
+              "api/creation/range",
+              "api/creation/throwError",
+              "api/creation/timer",
+              "api/creation/zip"
+            ]
+          },
+          {
+            "group": "Transformation Operators",
+            "pages": [
+              "api/operators/buffer",
+              "api/operators/bufferCount",
+              "api/operators/bufferTime",
+              "api/operators/bufferToggle",
+              "api/operators/bufferWhen",
+              "api/operators/concatMap",
+              "api/operators/exhaustMap",
+              "api/operators/expand",
+              "api/operators/groupBy",
+              "api/operators/map",
+              "api/operators/mergeMap",
+              "api/operators/scan",
+              "api/operators/switchMap",
+              "api/operators/window",
+              "api/operators/windowCount",
+              "api/operators/windowTime",
+              "api/operators/windowToggle",
+              "api/operators/windowWhen"
+            ]
+          },
+          {
+            "group": "Filtering Operators",
+            "pages": [
+              "api/operators/audit",
+              "api/operators/auditTime",
+              "api/operators/debounce",
+              "api/operators/debounceTime",
+              "api/operators/distinct",
+              "api/operators/distinctUntilChanged",
+              "api/operators/elementAt",
+              "api/operators/filter",
+              "api/operators/first",
+              "api/operators/ignoreElements",
+              "api/operators/last",
+              "api/operators/sample",
+              "api/operators/sampleTime",
+              "api/operators/skip",
+              "api/operators/skipLast",
+              "api/operators/skipUntil",
+              "api/operators/skipWhile",
+              "api/operators/take",
+              "api/operators/takeLast",
+              "api/operators/takeUntil",
+              "api/operators/takeWhile",
+              "api/operators/throttle",
+              "api/operators/throttleTime"
+            ]
+          },
+          {
+            "group": "Combination Operators",
+            "pages": [
+              "api/operators/combineLatestAll",
+              "api/operators/combineLatestWith",
+              "api/operators/concatAll",
+              "api/operators/concatWith",
+              "api/operators/mergeAll",
+              "api/operators/mergeWith",
+              "api/operators/startWith",
+              "api/operators/endWith",
+              "api/operators/withLatestFrom",
+              "api/operators/zipAll",
+              "api/operators/zipWith"
+            ]
+          },
+          {
+            "group": "Error Handling Operators",
+            "pages": [
+              "api/operators/catchError",
+              "api/operators/retry",
+              "api/operators/retryWhen"
+            ]
+          },
+          {
+            "group": "Utility Operators",
+            "pages": [
+              "api/operators/tap",
+              "api/operators/delay",
+              "api/operators/delayWhen",
+              "api/operators/finalize",
+              "api/operators/observeOn",
+              "api/operators/subscribeOn",
+              "api/operators/timeout",
+              "api/operators/timestamp",
+              "api/operators/toArray"
+            ]
+          },
+          {
+            "group": "Subjects",
+            "pages": [
+              "api/subjects/Subject",
+              "api/subjects/BehaviorSubject",
+              "api/subjects/ReplaySubject",
+              "api/subjects/AsyncSubject"
+            ]
+          },
+          {
+            "group": "Schedulers",
+            "pages": [
+              "api/schedulers/asyncScheduler",
+              "api/schedulers/asapScheduler",
+              "api/schedulers/queueScheduler",
+              "api/schedulers/animationFrameScheduler"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Observable sequences for async and event-based programming",
+    "100+ operators for composing and transforming data streams",
+    "Subject types for multicasting (Subject, BehaviorSubject, ReplaySubject, AsyncSubject)",
+    "Schedulers for controlling concurrency and timing",
+    "Testing utilities with marble diagrams",
+    "Tree-shakeable and modular architecture"
+  ],
+  "publicApiSurface": [
+    "Observable",
+    "from",
+    "of",
+    "interval",
+    "timer",
+    "fromEvent",
+    "combineLatest",
+    "merge",
+    "concat",
+    "zip",
+    "forkJoin",
+    "map",
+    "filter",
+    "scan",
+    "mergeMap",
+    "switchMap",
+    "concatMap",
+    "exhaustMap",
+    "catchError",
+    "retry",
+    "take",
+    "takeUntil",
+    "debounceTime",
+    "throttleTime",
+    "distinctUntilChanged",
+    "Subject",
+    "BehaviorSubject",
+    "ReplaySubject",
+    "AsyncSubject",
+    "asyncScheduler",
+    "animationFrameScheduler"
+  ]
+}
