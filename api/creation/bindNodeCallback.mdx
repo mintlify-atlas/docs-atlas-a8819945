@@ -1,0 +1,326 @@
+---
+title: 'bindNodeCallback'
+description: 'Convert a Node.js-style callback API to a function that returns an Observable'
+---
+
+# bindNodeCallback
+
+Converts a Node.js-style callback API to a function that returns an Observable. Specifically designed for callbacks that follow the `callback(error, result)` pattern.
+
+## Import
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function bindNodeCallback<A extends readonly unknown[], R extends readonly unknown[]>(
+  callbackFunc: (...args: [...A, (err: any, ...res: R) => void]) => void,
+  schedulerLike?: SchedulerLike
+): (...arg: A) => Observable<R extends [] ? void : R extends [any] ? R[0] : R>;
+```
+
+## Parameters
+
+<ParamField path="callbackFunc" type="Function" required>
+  A function with a Node.js-style callback as the last parameter. The callback should have the signature `(error, result) => void`.
+</ParamField>
+
+<ParamField path="schedulerLike" type="SchedulerLike">
+  Optional scheduler to control when the function is called and when results are emitted.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Function" type="(...args) => Observable">
+  A function that takes the same parameters as `callbackFunc` (except the callback). Returns an Observable that:
+  - Emits the result value(s) if no error occurs
+  - Errors if the first callback parameter is truthy
+</ResponseField>
+
+## Description
+
+`bindNodeCallback` is similar to `bindCallback`, but expects the callback to follow Node.js conventions:
+
+1. The first parameter is an error object (or `null`/`undefined` if no error)
+2. Subsequent parameters are the success values
+
+If the error parameter is truthy, the Observable will error. Otherwise, it will emit the success values.
+
+## Examples
+
+### Read File from Filesystem
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+import * as fs from 'fs';
+
+const readFileAsObservable = bindNodeCallback(fs.readFile);
+const result$ = readFileAsObservable('./roadNames.txt', 'utf8');
+
+result$.subscribe({
+  next: data => console.log('File contents:', data),
+  error: err => console.error('Error reading file:', err),
+  complete: () => console.log('Done')
+});
+```
+
+### Multiple Result Values
+
+When the callback receives multiple values (after the error), they are emitted as an array:
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+
+function someFunction(
+  callback: (err: any, a: number, b: string) => void
+) {
+  callback(null, 5, 'some string');
+}
+
+const boundSomeFunction = bindNodeCallback(someFunction);
+
+boundSomeFunction().subscribe(value => {
+  console.log(value); // [5, 'some string']
+});
+```
+
+### Error Handling
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+import { catchError, of } from 'rxjs';
+import * as fs from 'fs';
+
+const readFile$ = bindNodeCallback(fs.readFile);
+
+readFile$('./nonexistent.txt', 'utf8').pipe(
+  catchError(error => {
+    console.error('File not found:', error.message);
+    return of('Default content');
+  })
+).subscribe(content => {
+  console.log('Content:', content);
+});
+```
+
+## Common Use Cases
+
+### Database Queries
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+import { switchMap, map } from 'rxjs/operators';
+
+// Assuming a database library with Node.js callbacks
+const query = bindNodeCallback(db.query.bind(db));
+
+query('SELECT * FROM users WHERE id = ?', [userId]).pipe(
+  map(rows => rows[0]),
+  switchMap(user => {
+    return query('SELECT * FROM posts WHERE user_id = ?', [user.id]);
+  })
+).subscribe(posts => {
+  console.log('User posts:', posts);
+});
+```
+
+### File System Operations
+
+<CodeGroup>
+
+```typescript Read File
+import { bindNodeCallback } from 'rxjs';
+import * as fs from 'fs';
+
+const readFile$ = bindNodeCallback(fs.readFile);
+
+readFile$('./config.json', 'utf8').subscribe({
+  next: content => {
+    const config = JSON.parse(content);
+    console.log('Config:', config);
+  },
+  error: err => console.error('Error:', err)
+});
+```
+
+```typescript Write File
+import { bindNodeCallback } from 'rxjs';
+import * as fs from 'fs';
+
+const writeFile$ = bindNodeCallback(fs.writeFile);
+
+const data = JSON.stringify({ name: 'Test', value: 42 });
+writeFile$('./output.json', data, 'utf8').subscribe({
+  next: () => console.log('File written successfully'),
+  error: err => console.error('Write error:', err)
+});
+```
+
+```typescript Check File Exists
+import { bindNodeCallback } from 'rxjs';
+import * as fs from 'fs';
+import { catchError, of, map } from 'rxjs';
+
+const access$ = bindNodeCallback(fs.access);
+
+access$('./file.txt', fs.constants.F_OK).pipe(
+  map(() => true),
+  catchError(() => of(false))
+).subscribe(exists => {
+  console.log('File exists:', exists);
+});
+```
+
+</CodeGroup>
+
+### Crypto Operations
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+import * as crypto from 'crypto';
+
+const randomBytes$ = bindNodeCallback(crypto.randomBytes);
+
+randomBytes$(32).subscribe({
+  next: buffer => {
+    const token = buffer.toString('hex');
+    console.log('Random token:', token);
+  },
+  error: err => console.error('Crypto error:', err)
+});
+```
+
+### HTTP Request (Node.js)
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+import * as https from 'https';
+import { map } from 'rxjs/operators';
+
+function httpGet(url: string, callback: (err: any, data: string) => void) {
+  https.get(url, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk);
+    res.on('end', () => callback(null, data));
+    res.on('error', err => callback(err, ''));
+  });
+}
+
+const httpGet$ = bindNodeCallback(httpGet);
+
+httpGet$('https://api.github.com/users/octocat').pipe(
+  map(response => JSON.parse(response))
+).subscribe(user => {
+  console.log('User:', user.login);
+});
+```
+
+## Important Differences from bindCallback
+
+<Note>
+  **Error Detection:** `bindNodeCallback` treats the first parameter as an error indicator. Any truthy value (including non-zero numbers, non-empty strings, or `true`) will cause the Observable to error.
+</Note>
+
+```typescript
+import { bindNodeCallback } from 'rxjs';
+
+// This will ERROR because first parameter is truthy
+function badCallback(cb: (err: any) => void) {
+  cb(1); // Non-zero number is truthy
+}
+
+const bound = bindNodeCallback(badCallback);
+bound().subscribe({
+  next: () => console.log('Success'), // Won't be called
+  error: err => console.error('Error:', err) // Will be called with value 1
+});
+```
+
+### Regular vs Node.js Style
+
+<CodeGroup>
+
+```typescript Node.js Style (bindNodeCallback)
+import { bindNodeCallback } from 'rxjs';
+
+// Callback signature: (error, result) => void
+const nodeStyleFn = (x: number, cb: (err: any, result: number) => void) => {
+  if (x < 0) {
+    cb(new Error('Negative number'), 0);
+  } else {
+    cb(null, x * 2);
+  }
+};
+
+const bound = bindNodeCallback(nodeStyleFn);
+
+bound(5).subscribe(
+  result => console.log('Result:', result), // Result: 10
+  err => console.error('Error:', err)
+);
+```
+
+```typescript Regular Style (bindCallback)
+import { bindCallback } from 'rxjs';
+
+// Callback signature: (result) => void
+const regularFn = (x: number, cb: (result: number) => void) => {
+  cb(x * 2);
+};
+
+const bound = bindCallback(regularFn);
+
+bound(5).subscribe(
+  result => console.log('Result:', result) // Result: 10
+);
+```
+
+</CodeGroup>
+
+## Behavior with Scheduler
+
+```typescript
+import { bindNodeCallback, asyncScheduler } from 'rxjs';
+import * as fs from 'fs';
+
+// Without scheduler - synchronous subscription
+const readFileSync = bindNodeCallback(fs.readFile);
+
+// With scheduler - asynchronous subscription
+const readFileAsync = bindNodeCallback(fs.readFile, asyncScheduler);
+
+readFileAsync('./file.txt', 'utf8').subscribe(content => {
+  console.log('Content loaded asynchronously');
+});
+
+console.log('This logs first');
+```
+
+## Tips
+
+<Tip>
+  Use `bindNodeCallback` for any API that follows the `(err, result)` callback pattern, even outside of Node.js.
+</Tip>
+
+<Tip>
+  The Observable completes immediately after emitting the result, making it perfect for one-time async operations.
+</Tip>
+
+<Warning>
+  Don't use `bindNodeCallback` with callbacks that are called multiple times. For that, use `fromEvent` or `fromEventPattern`.
+</Warning>
+
+## Related Operators
+
+- **[bindCallback](/api/creation/bindCallback)** - For regular callbacks without error parameter
+- **[from](/api/creation/from)** - Convert promises to Observables
+- **[defer](/api/creation/defer)** - Lazy Observable creation
+- **[fromEvent](/api/creation/fromEvent)** - For event emitters
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/bindNodeCallback)
+- [Node.js Callback Patterns](https://nodejs.org/en/knowledge/errors/what-are-the-error-conventions/)

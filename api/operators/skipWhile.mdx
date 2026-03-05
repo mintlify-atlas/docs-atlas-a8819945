@@ -1,0 +1,47 @@
+---
+title: skipWhile
+description: Skips values while a condition is true, then emits all subsequent values
+---
+
+## Overview
+
+Returns an Observable that skips all items emitted by the source Observable as long as a specified condition holds true, but emits all further source items as soon as the condition becomes false.
+
+## Type Signature
+
+```typescript
+function skipWhile<T>(
+  predicate: (value: T, index: number) => boolean
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="predicate" type="(value: T, index: number) => boolean" required>
+  A function to test each item emitted from the source Observable. Once returns false, all subsequent values pass through.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that begins emitting items when the predicate becomes false.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { from, skipWhile } from 'rxjs';
+
+const source = from(['Green Arrow', 'SuperMan', 'Flash', 'SuperGirl', 'Black Canary']);
+const example = source.pipe(skipWhile(hero => hero !== 'SuperGirl'));
+
+example.subscribe(console.log);
+// Output: SuperGirl, Black Canary
+```
+
+## Related Operators
+
+- **[skip](/api/operators/skip)** - Skips first N values
+- **[skipUntil](/api/operators/skipUntil)** - Skips until another Observable emits
+- **[takeWhile](/api/operators/takeWhile)** - Takes values while condition is true
+- **[filter](/api/operators/filter)** - Filters all values by condition

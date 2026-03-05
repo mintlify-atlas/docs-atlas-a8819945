@@ -1,0 +1,120 @@
+---
+title: buffer
+description: Buffers source Observable values until closingNotifier emits
+---
+
+## Overview
+
+Collects values from the source Observable into an array and emits that array only when another Observable (the `closingNotifier`) emits. After emitting the buffer, it immediately starts collecting values into a new buffer.
+
+<Info>
+  `buffer` is useful when you need to batch events based on some external signal, like user interactions or timing events.
+</Info>
+
+## Type Signature
+
+```typescript
+function buffer<T>(closingNotifier: ObservableInput<any>): OperatorFunction<T, T[]>
+```
+
+## Parameters
+
+<ParamField path="closingNotifier" type="ObservableInput<any>" required>
+  An Observable (or Promise, Array, etc.) that signals when the current buffer should be emitted on the output Observable. Each time it emits, the current buffer is released and a new one begins.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, T[]>">
+  A function that returns an Observable of arrays. Each array contains all values that were emitted by the source Observable since the last time the `closingNotifier` emitted.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Buffer Interval Events on Click
+
+<CodeGroup>
+```typescript Example
+import { fromEvent, interval, buffer } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const intervalEvents = interval(1000);
+const buffered = intervalEvents.pipe(buffer(clicks));
+
+buffered.subscribe(x => console.log(x));
+// Click after 3 seconds: [0, 1, 2]
+// Click after 2 more seconds: [3, 4]
+```
+
+```typescript With Promises
+import { interval, buffer, from } from 'rxjs';
+
+const promise = new Promise(resolve => 
+  setTimeout(() => resolve('done'), 5000)
+);
+
+const numbers = interval(1000);
+const buffered = numbers.pipe(buffer(from(promise)));
+
+buffered.subscribe(x => console.log(x));
+// After 5 seconds: [0, 1, 2, 3, 4]
+```
+</CodeGroup>
+
+### Advanced Example: Buffer Based on Custom Events
+
+```typescript
+import { fromEvent, buffer, map } from 'rxjs';
+
+const mouseMoves = fromEvent<MouseEvent>(document, 'mousemove');
+const mouseClicks = fromEvent(document, 'click');
+
+const positions = mouseMoves.pipe(
+  map(e => ({ x: e.clientX, y: e.clientY })),
+  buffer(mouseClicks)
+);
+
+positions.subscribe(moves => {
+  console.log(`Captured ${moves.length} mouse movements`);
+  console.log('Positions:', moves);
+});
+```
+
+## Marble Diagram
+
+```
+Source:   --1--2--3--4--5--6--7--8--9--|
+Notifier: --------a--------b--------c--|
+Result:   --------[1,2,3]--[4,5,6]--[7,8,9]--|
+```
+
+Each time the notifier emits, all accumulated values are released as an array.
+
+## Common Use Cases
+
+1. **Event Batching**: Collect multiple rapid events and process them together when a trigger occurs
+2. **User Interaction Patterns**: Buffer scroll events until the user stops scrolling (using debounced signal)
+3. **Data Aggregation**: Accumulate data points until a "flush" signal arrives
+4. **Performance Optimization**: Batch UI updates to reduce rendering overhead
+
+<Warning>
+  If the source Observable completes, the current buffer will be emitted even if the `closingNotifier` hasn't emitted yet.
+</Warning>
+
+## Related Operators
+
+- **[bufferCount](/api/operators/buffercount)** - Buffer based on a specific number of values
+- **[bufferTime](/api/operators/buffertime)** - Buffer based on time intervals
+- **[bufferToggle](/api/operators/buffertoggle)** - Buffer with separate opening and closing signals
+- **[bufferWhen](/api/operators/bufferwhen)** - Buffer using a factory function for closing notifiers
+- **[window](/api/operators/window)** - Like buffer, but emits Observables instead of arrays
+
+## Implementation Details
+
+The operator maintains an internal array that accumulates values. When the `closingNotifier` emits:
+
+1. The current buffer array is emitted to subscribers
+2. A new empty array is created to collect subsequent values
+3. The process repeats for each notification
+
+Memory is properly released on finalization to prevent leaks.

@@ -1,0 +1,405 @@
+---
+title: 'fromEvent'
+description: 'Creates an Observable from DOM events, Node.js EventEmitter, or similar event targets'
+---
+
+# fromEvent
+
+Creates an Observable that emits events of a specific type coming from the given event target.
+
+## Import
+
+```typescript
+import { fromEvent } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+// DOM EventTarget
+function fromEvent<T>(
+  target: HasEventTargetAddRemove<T> | ArrayLike<HasEventTargetAddRemove<T>>,
+  eventName: string,
+  options?: EventListenerOptions
+): Observable<T>;
+
+// Node.js EventEmitter
+function fromEvent<T>(
+  target: NodeStyleEventEmitter | ArrayLike<NodeStyleEventEmitter>,
+  eventName: string | symbol
+): Observable<T>;
+
+// With result selector
+function fromEvent<T, R>(
+  target: EventTarget,
+  eventName: string,
+  resultSelector: (event: T) => R
+): Observable<R>;
+```
+
+## Parameters
+
+<ParamField path="target" type="EventTarget | NodeEventEmitter | Array" required>
+  The event target to attach the event handler to. Can be:
+  - **DOM EventTarget** (document, elements, window)
+  - **Node.js EventEmitter**
+  - **jQuery-style event target** (with `on`/`off` methods)
+  - **NodeList** or **HTMLCollection**
+</ParamField>
+
+<ParamField path="eventName" type="string | symbol" required>
+  The name of the event to listen for.
+</ParamField>
+
+<ParamField path="options" type="EventListenerOptions">
+  Options to pass to addEventListener (capture, passive, once).
+</ParamField>
+
+<ParamField path="resultSelector" type="Function">
+  Optional function to transform the event before emission.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable that emits events from the target. The event handler is registered when you subscribe and removed when you unsubscribe.
+</ResponseField>
+
+## Description
+
+`fromEvent` creates an Observable from various event sources. It automatically detects the type of event target and uses the appropriate methods to attach and detach event listeners.
+
+**Supported event targets:**
+- DOM EventTarget (addEventListener/removeEventListener)
+- Node.js EventEmitter (addListener/removeListener)
+- jQuery-style objects (on/off)
+- NodeList or HTMLCollection (attaches to all elements)
+
+**Key characteristics:**
+- Event handler registered on subscription
+- Event handler removed on unsubscription
+- Never completes (unless the target is removed)
+- Handles multiple targets (NodeList, etc.)
+
+## Examples
+
+### Basic Click Events
+
+```typescript
+import { fromEvent } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+
+clicks$.subscribe(event => {
+  console.log('Clicked at:', event.clientX, event.clientY);
+});
+
+// Logs mouse position on every click
+```
+
+### Input Events with Type Safety
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { map, debounceTime } from 'rxjs/operators';
+
+const input = document.querySelector('#search') as HTMLInputElement;
+const input$ = fromEvent<InputEvent>(input, 'input');
+
+input$.pipe(
+  debounceTime(300),
+  map(event => (event.target as HTMLInputElement).value)
+).subscribe(searchTerm => {
+  console.log('Search for:', searchTerm);
+});
+```
+
+### Multiple Element Types
+
+```typescript
+import { fromEvent } from 'rxjs';
+
+const buttons = document.querySelectorAll('button');
+const clicks$ = fromEvent(buttons, 'click');
+
+clicks$.subscribe(event => {
+  const button = event.target as HTMLButtonElement;
+  console.log('Button clicked:', button.textContent);
+});
+```
+
+### Window Events
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { throttleTime, map } from 'rxjs/operators';
+
+const scroll$ = fromEvent(window, 'scroll').pipe(
+  throttleTime(100),
+  map(() => window.scrollY)
+);
+
+scroll$.subscribe(scrollY => {
+  console.log('Scroll position:', scrollY);
+});
+```
+
+## Common Use Cases
+
+### Autocomplete Search
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { map, debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(event => (event.target as HTMLInputElement).value),
+  debounceTime(300),
+  distinctUntilChanged(),
+  switchMap(term => {
+    if (!term) return of([]);
+    return ajax.getJSON(`/api/search?q=${term}`);
+  })
+);
+
+search$.subscribe(results => {
+  console.log('Search results:', results);
+  displayResults(results);
+});
+```
+
+### Drag and Drop
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { switchMap, takeUntil, map } from 'rxjs/operators';
+
+const element = document.querySelector('#draggable');
+
+const mousedown$ = fromEvent<MouseEvent>(element, 'mousedown');
+const mousemove$ = fromEvent<MouseEvent>(document, 'mousemove');
+const mouseup$ = fromEvent<MouseEvent>(document, 'mouseup');
+
+const drag$ = mousedown$.pipe(
+  switchMap(startEvent => {
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    
+    return mousemove$.pipe(
+      map(moveEvent => ({
+        x: moveEvent.clientX - startX,
+        y: moveEvent.clientY - startY
+      })),
+      takeUntil(mouseup$)
+    );
+  })
+);
+
+drag$.subscribe(({ x, y }) => {
+  element.style.transform = `translate(${x}px, ${y}px)`;
+});
+```
+
+### Form Validation
+
+```typescript
+import { fromEvent, combineLatest } from 'rxjs';
+import { map, startWith } from 'rxjs/operators';
+
+const email = document.querySelector('#email') as HTMLInputElement;
+const password = document.querySelector('#password') as HTMLInputElement;
+const submitButton = document.querySelector('#submit') as HTMLButtonElement;
+
+const email$ = fromEvent(email, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith(''),
+  map(val => val.includes('@'))
+);
+
+const password$ = fromEvent(password, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith(''),
+  map(val => val.length >= 8)
+);
+
+combineLatest([email$, password$]).pipe(
+  map(([emailValid, passwordValid]) => emailValid && passwordValid)
+).subscribe(isValid => {
+  submitButton.disabled = !isValid;
+});
+```
+
+### Keyboard Shortcuts
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
+
+const keydown$ = fromEvent<KeyboardEvent>(document, 'keydown');
+
+// Ctrl+S to save
+const save$ = keydown$.pipe(
+  filter(event => event.ctrlKey && event.key === 's'),
+  map(event => event.preventDefault())
+);
+
+save$.subscribe(() => {
+  console.log('Saving...');
+  saveDocument();
+});
+
+// Escape to close modal
+const escape$ = keydown$.pipe(
+  filter(event => event.key === 'Escape')
+);
+
+escape$.subscribe(() => {
+  console.log('Closing modal...');
+  closeModal();
+});
+```
+
+### WebSocket Events
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const socket = new WebSocket('wss://example.com');
+
+const message$ = fromEvent<MessageEvent>(socket, 'message').pipe(
+  map(event => JSON.parse(event.data))
+);
+
+const open$ = fromEvent(socket, 'open');
+const close$ = fromEvent(socket, 'close');
+const error$ = fromEvent(socket, 'error');
+
+open$.subscribe(() => console.log('Connected'));
+close$.subscribe(() => console.log('Disconnected'));
+error$.subscribe(err => console.error('WebSocket error:', err));
+
+message$.subscribe(data => {
+  console.log('Received:', data);
+});
+```
+
+## Using EventListener Options
+
+### Capture Phase
+
+```typescript
+import { fromEvent } from 'rxjs';
+
+const parent = document.querySelector('#parent');
+const child = document.querySelector('#child');
+
+// Capture phase (event goes DOWN the DOM tree)
+const captureClicks$ = fromEvent(parent, 'click', { capture: true });
+
+// Bubble phase (event goes UP the DOM tree)
+const bubbleClicks$ = fromEvent(parent, 'click', { capture: false });
+
+captureClicks$.subscribe(() => console.log('Capture phase'));
+bubbleClicks$.subscribe(() => console.log('Bubble phase'));
+```
+
+### Passive Listeners
+
+```typescript
+import { fromEvent } from 'rxjs';
+
+// Passive listeners improve scroll performance
+const scroll$ = fromEvent(window, 'scroll', { passive: true });
+
+scroll$.subscribe(() => {
+  // Cannot call event.preventDefault() here
+  console.log('Scrolled');
+});
+```
+
+### Once Option
+
+```typescript
+import { fromEvent } from 'rxjs';
+
+// Listen for only one event, then auto-remove
+const firstClick$ = fromEvent(document, 'click', { once: true });
+
+firstClick$.subscribe(() => {
+  console.log('First click detected!');
+  // Listener automatically removed after this
+});
+```
+
+## Node.js EventEmitter
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { EventEmitter } from 'events';
+
+const emitter = new EventEmitter();
+
+const data$ = fromEvent(emitter, 'data');
+const error$ = fromEvent(emitter, 'error');
+
+data$.subscribe(data => console.log('Data:', data));
+error$.subscribe(err => console.error('Error:', err));
+
+emitter.emit('data', { value: 42 });
+emitter.emit('error', new Error('Something went wrong'));
+```
+
+## Memory Management
+
+<Warning>
+  Always unsubscribe from event Observables when you're done to prevent memory leaks. The event listener will remain attached until you unsubscribe.
+</Warning>
+
+```typescript
+import { fromEvent } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+import { Subject } from 'rxjs';
+
+const destroy$ = new Subject<void>();
+
+const clicks$ = fromEvent(document, 'click').pipe(
+  takeUntil(destroy$)
+);
+
+clicks$.subscribe(event => console.log('Clicked'));
+
+// Later, when cleaning up (e.g., component unmount)
+destroy$.next();
+destroy$.complete();
+// Event listener is now removed
+```
+
+## Tips
+
+<Tip>
+  Use TypeScript generics to get proper type inference for events: `fromEvent<MouseEvent>(element, 'click')`
+</Tip>
+
+<Tip>
+  Combine with operators like `debounceTime`, `throttleTime`, or `distinctUntilChanged` to control emission frequency.
+</Tip>
+
+<Note>
+  For events that fire once (like `load` or `DOMContentLoaded`), consider using `fromEvent` with `take(1)` or the `once` option.
+</Note>
+
+## Related Operators
+
+- **[fromEventPattern](/api/creation/fromEventPattern)** - For custom event APIs
+- **[bindCallback](/api/creation/bindCallback)** - For callback-based APIs
+- **[merge](/api/creation/merge)** - Merge multiple event streams
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/fromEvent)
+- [addEventListener MDN](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener)
+- [Node.js EventEmitter](https://nodejs.org/api/events.html#class-eventemitter)

@@ -1,0 +1,370 @@
+---
+title: sampleTime
+description: Samples the source Observable at periodic time intervals
+---
+
+## Overview
+
+Emits the most recently emitted value from the source Observable within periodic time intervals.
+
+<Note>
+`sampleTime` periodically looks at the source Observable and emits whichever value it has most recently emitted since the previous sampling, unless the source has not emitted anything since the previous sampling.
+</Note>
+
+## Type Signature
+
+```typescript
+function sampleTime<T>(
+  period: number,
+  scheduler: SchedulerLike = asyncScheduler
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="period" type="number" required>
+  The sampling period expressed in milliseconds or the time unit determined internally by the optional `scheduler`.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The SchedulerLike to use for managing the timers that handle the sampling.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits the results of sampling the values emitted by the source Observable at the specified time interval.
+
+## How It Works
+
+1. Starts a **periodic timer** with the specified `period`
+2. Caches the most recent value from the source
+3. On each timer tick:
+   - If source has emitted at least one value since last sample: **emits** the cached value
+   - If source hasn't emitted: **does nothing** (skips this sample)
+4. Sampling continues until the source completes
+
+<Tip>
+`sampleTime` is equivalent to `sample(interval(period, scheduler))`.
+</Tip>
+
+## Usage Examples
+
+### Basic Example: Sample Clicks
+
+```typescript
+import { fromEvent, sampleTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(sampleTime(1000));
+
+result.subscribe(x => console.log(x));
+// Emits at most one click per second
+```
+
+### Sample Mouse Movement
+
+```typescript
+import { fromEvent, sampleTime, map } from 'rxjs';
+
+const moves$ = fromEvent<MouseEvent>(document, 'mousemove').pipe(
+  map(e => ({ x: e.clientX, y: e.clientY })),
+  sampleTime(100) // Sample every 100ms
+);
+
+moves$.subscribe(pos => {
+  console.log('Mouse position:', pos);
+  updateCursor(pos);
+});
+```
+
+### Sample Input Value
+
+```typescript
+import { fromEvent, sampleTime, map } from 'rxjs';
+
+const input = document.querySelector('#search') as HTMLInputElement;
+
+const sampledInput$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  sampleTime(500) // Sample every 500ms
+);
+
+sampledInput$.subscribe(value => {
+  console.log('Current input:', value);
+});
+```
+
+<CodeGroup>
+```typescript Scroll Position Tracking
+import { fromEvent, sampleTime, map } from 'rxjs';
+
+const scroll$ = fromEvent(window, 'scroll').pipe(
+  map(() => ({
+    x: window.scrollX,
+    y: window.scrollY
+  })),
+  sampleTime(200) // Sample every 200ms
+);
+
+scroll$.subscribe(pos => {
+  console.log('Scroll position:', pos);
+  updateScrollIndicator(pos.y);
+});
+```
+
+```typescript Live Analytics
+import { fromEvent, sampleTime, scan, map } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+
+const clickRate$ = clicks$.pipe(
+  scan(count => count + 1, 0),
+  sampleTime(5000), // Sample every 5 seconds
+  map((count, index) => ({
+    interval: index + 1,
+    clicks: count,
+    rate: count / ((index + 1) * 5)
+  }))
+);
+
+clickRate$.subscribe(stats => {
+  console.log(`Clicks: ${stats.clicks}, Rate: ${stats.rate.toFixed(2)}/sec`);
+});
+```
+
+```typescript Sensor Data
+import { sampleTime, map } from 'rxjs';
+
+interface SensorReading {
+  temperature: number;
+  humidity: number;
+  timestamp: number;
+}
+
+const sensorStream$ = getSensorData();
+
+const sampledReadings$ = sensorStream$.pipe(
+  sampleTime(60000) // Sample every minute
+);
+
+sampledReadings$.subscribe(reading => {
+  console.log('Temperature:', reading.temperature);
+  console.log('Humidity:', reading.humidity);
+  logToDatabase(reading);
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `sampleTime` when:
+- **Reducing frequency** of high-frequency events
+- **Periodic monitoring** of a changing value
+- **Performance optimization** for rapid UI updates
+- Creating **time-based snapshots** of state
+- **Throttling** updates to a fixed rate
+
+### Don't use `sampleTime` when:
+- You need **every value** from the source
+- Sampling should be **event-driven** (use `sample` instead)
+- You want the **first** value in each period (use `throttleTime`)
+- You need to wait for **silence** (use `debounceTime`)
+
+## Common Patterns
+
+### Performance-Optimized Scroll Handler
+
+```typescript
+import { fromEvent, sampleTime, map, distinctUntilChanged } from 'rxjs';
+
+const scroll$ = fromEvent(window, 'scroll').pipe(
+  map(() => window.scrollY),
+  sampleTime(100), // Limit to 10 updates per second
+  distinctUntilChanged() // Only emit when position actually changed
+);
+
+scroll$.subscribe(scrollY => {
+  // Update UI (expensive operation)
+  updateParallaxEffect(scrollY);
+});
+```
+
+### Real-Time Dashboard
+
+```typescript
+import { sampleTime, map } from 'rxjs';
+
+interface Metrics {
+  cpu: number;
+  memory: number;
+  requests: number;
+}
+
+const metrics$ = getMetricsStream();
+
+const dashboardUpdates$ = metrics$.pipe(
+  sampleTime(2000) // Update dashboard every 2 seconds
+);
+
+dashboardUpdates$.subscribe(metrics => {
+  updateCPUChart(metrics.cpu);
+  updateMemoryChart(metrics.memory);
+  updateRequestsChart(metrics.requests);
+});
+```
+
+### Live Search Preview
+
+```typescript
+import { fromEvent, sampleTime, map, distinctUntilChanged, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const liveSearch$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  sampleTime(300), // Sample every 300ms
+  distinctUntilChanged(),
+  switchMap(term => 
+    ajax.getJSON(`/api/search?q=${encodeURIComponent(term)}`)
+  )
+);
+
+liveSearch$.subscribe(results => {
+  displaySearchResults(results);
+});
+```
+
+### Periodic State Snapshot
+
+```typescript
+import { BehaviorSubject, sampleTime } from 'rxjs';
+
+interface AppState {
+  user: string;
+  route: string;
+  data: any;
+}
+
+const state$ = new BehaviorSubject<AppState>({
+  user: 'guest',
+  route: '/',
+  data: null
+});
+
+const snapshots$ = state$.pipe(
+  sampleTime(10000) // Snapshot every 10 seconds
+);
+
+snapshots$.subscribe(state => {
+  console.log('State snapshot:', state);
+  saveToLocalStorage(state);
+});
+```
+
+<Warning>
+If the source doesn't emit any values during a sampling period, that period will be skipped (no emission occurs).
+</Warning>
+
+### Animation Frame Sampling
+
+```typescript
+import { fromEvent, sampleTime } from 'rxjs';
+
+const mouseMoves$ = fromEvent<MouseEvent>(document, 'mousemove');
+
+// Sample at ~60fps (16.67ms)
+const smoothMoves$ = mouseMoves$.pipe(
+  sampleTime(16)
+);
+
+smoothMoves$.subscribe(event => {
+  updateMouseFollower(event.clientX, event.clientY);
+});
+```
+
+## Comparison with Other Operators
+
+```typescript
+import { interval, sampleTime, auditTime, throttleTime, take } from 'rxjs';
+
+const fast$ = interval(100).pipe(take(50));
+
+// sampleTime: Samples every period (last value)
+fast$.pipe(sampleTime(500)).subscribe(x => 
+  console.log('sampleTime:', x)
+);
+// Output: ~4, ~9, ~14, ~19, ...
+
+// auditTime: Emits last value after each period
+fast$.pipe(auditTime(500)).subscribe(x => 
+  console.log('auditTime:', x)
+);
+// Output: ~4, ~9, ~14, ~19, ...
+
+// throttleTime: Emits first value of each period
+fast$.pipe(throttleTime(500)).subscribe(x => 
+  console.log('throttleTime:', x)
+);
+// Output: 0, ~5, ~10, ~15, ...
+```
+
+<Tip>
+For most use cases, `sampleTime` and `auditTime` behave similarly. The key difference is that `auditTime` waits for the silence period after each emission, while `sampleTime` samples at fixed intervals regardless of emissions.
+</Tip>
+
+## Performance Benefits
+
+```typescript
+import { fromEvent, sampleTime } from 'rxjs';
+
+// WITHOUT sampleTime: Expensive operation on every event
+fromEvent(window, 'scroll').subscribe(() => {
+  updateComplexVisualization(); // Called hundreds of times per second!
+});
+
+// WITH sampleTime: Controlled update rate
+fromEvent(window, 'scroll').pipe(
+  sampleTime(100) // Maximum 10 updates per second
+).subscribe(() => {
+  updateComplexVisualization(); // Much better performance!
+});
+```
+
+## Practical Example: Network Monitor
+
+```typescript
+import { interval, sampleTime, map, scan } from 'rxjs';
+
+interface NetworkStats {
+  requests: number;
+  bandwidth: number;
+  errors: number;
+}
+
+const networkEvents$ = getNetworkEventStream();
+
+const stats$ = networkEvents$.pipe(
+  scan((stats, event) => ({
+    requests: stats.requests + 1,
+    bandwidth: stats.bandwidth + event.size,
+    errors: stats.errors + (event.error ? 1 : 0)
+  }), { requests: 0, bandwidth: 0, errors: 0 }),
+  sampleTime(5000) // Report every 5 seconds
+);
+
+stats$.subscribe(stats => {
+  console.log('Network Stats:');
+  console.log('  Requests:', stats.requests);
+  console.log('  Bandwidth:', formatBytes(stats.bandwidth));
+  console.log('  Errors:', stats.errors);
+});
+```
+
+## Related Operators
+
+- **[sample](/api/operators/sample)** - Sample when another Observable emits
+- **[auditTime](/api/operators/auditTime)** - Similar but waits after each emission
+- **[throttleTime](/api/operators/throttleTime)** - Emits first value instead of last
+- **[debounceTime](/api/operators/debounceTime)** - Waits for silence
+- **[distinctUntilChanged](/api/operators/distinctUntilChanged)** - Often combined to filter duplicates

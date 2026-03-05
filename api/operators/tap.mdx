@@ -1,0 +1,205 @@
+---
+title: 'tap'
+description: 'Perform side-effects for notifications from the source observable'
+---
+
+## Overview
+
+The `tap` operator is used to perform side-effects for notifications from the source Observable without modifying the emitted values. It's designed as a designated place for side-effects, helping keep other operators pure.
+
+<Note>
+  `tap` returns an exact mirror of the source Observable. Any error that occurs synchronously in a handler will be emitted as an error from the returned Observable.
+</Note>
+
+## Signature
+
+```typescript
+function tap<T>(
+  observerOrNext?: Partial<TapObserver<T>> | ((value: T) => void) | null
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="observerOrNext" type="Partial<TapObserver<T>> | ((value: T) => void) | null" default="undefined">
+  A next handler function or a partial observer object. Can include:
+  
+  - `next`: Callback for each emitted value
+  - `error`: Callback for error notifications
+  - `complete`: Callback for completion notification
+  - `subscribe`: Callback invoked when source is subscribed to
+  - `unsubscribe`: Callback invoked on explicit unsubscribe (not on error/complete)
+  - `finalize`: Callback invoked on any finalization (error, complete, or unsubscribe)
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="MonoTypeOperatorFunction<T>">
+  A function that returns an Observable identical to the source, but runs the specified observer or callback(s) for each item.
+</ParamField>
+
+## TapObserver Interface
+
+```typescript
+interface TapObserver<T> extends Observer<T> {
+  subscribe: () => void;
+  unsubscribe: () => void;
+  finalize: () => void;
+}
+```
+
+## Usage Examples
+
+### Basic Debugging
+
+The most common use case - logging values as they pass through:
+
+<CodeGroup>
+```typescript Debug with tap
+import { of, tap, map } from 'rxjs';
+
+of(Math.random()).pipe(
+  tap(console.log),  // Log the random number
+  map(n => n > 0.5 ? 'big' : 'small')
+).subscribe(console.log);
+
+// Output:
+// 0.7234... (logged by tap)
+// big (logged by subscribe)
+```
+
+```typescript Multiple tap handlers
+import { interval, tap, take } from 'rxjs';
+
+interval(1000).pipe(
+  take(3),
+  tap({
+    next: val => console.log('Value:', val),
+    complete: () => console.log('Complete!')
+  })
+).subscribe();
+
+// Output:
+// Value: 0
+// Value: 1
+// Value: 2
+// Complete!
+```
+</CodeGroup>
+
+### Lifecycle Callbacks
+
+Using `tap` to track subscription lifecycle:
+
+```typescript
+import { fromEvent, switchMap, tap, interval, take } from 'rxjs';
+
+const source$ = fromEvent(document, 'click');
+const result$ = source$.pipe(
+  switchMap((_, i) => i % 2 === 0
+    ? fromEvent(document, 'mousemove').pipe(
+        tap({
+          subscribe: () => console.log(`Subscribed to mouse move #${i}`),
+          unsubscribe: () => console.log(`Mouse move #${i} unsubscribed`),
+          finalize: () => console.log(`Mouse move #${i} finalized`)
+        })
+      )
+    : interval(1000).pipe(
+        take(5),
+        tap({
+          subscribe: () => console.log(`Subscribed to interval #${i}`),
+          finalize: () => console.log(`Interval #${i} finalized`)
+        })
+      )
+  )
+);
+
+result$.subscribe({ next: console.log });
+```
+
+### Validation and Error Handling
+
+Force errors based on emitted values:
+
+```typescript
+import { of, tap } from 'rxjs';
+
+const source = of(1, 2, 3, 4, 5);
+
+source.pipe(
+  tap(n => {
+    if (n > 3) {
+      throw new TypeError(`Value ${n} is greater than 3`);
+    }
+  })
+).subscribe({ 
+  next: console.log, 
+  error: err => console.log(err.message) 
+});
+
+// Output:
+// 1
+// 2
+// 3
+// Value 4 is greater than 3
+```
+
+### Sequence Tracking
+
+Track completion of sequential operations:
+
+```typescript
+import { of, concatMap, interval, take, map, tap } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  concatMap(n => interval(1000).pipe(
+    take(Math.round(Math.random() * 10)),
+    map(() => 'X'),
+    tap({ complete: () => console.log(`Done with ${n}`) })
+  ))
+).subscribe(console.log);
+
+// Output:
+// X
+// X
+// X
+// Done with 1
+// X
+// X
+// Done with 2
+// ...
+```
+
+## Common Use Cases
+
+<Tip>
+  **Debugging**: Use `tap(console.log)` anywhere in your pipe to inspect values
+</Tip>
+
+1. **Logging and Debugging**: Insert `tap` anywhere in the observable chain to log values
+2. **Updating State**: Trigger state updates as a side-effect of emissions
+3. **Analytics**: Track user interactions without affecting the data flow
+4. **Caching**: Store values in a cache as they pass through
+5. **Progress Tracking**: Update UI progress indicators
+
+## Best Practices
+
+<Warning>
+  Be careful with object mutations! You can mutate objects as they pass through `tap` handlers, which can lead to unexpected behavior.
+</Warning>
+
+- Keep `tap` handlers pure when possible - avoid mutations
+- Use `tap` for side-effects only, not for transforming values (use `map` instead)
+- For finalization logic, consider using `finalize` operator if you don't need other tap features
+- Remember that synchronous errors in tap handlers will error the entire stream
+
+## Related Operators
+
+- [finalize](/api/operators/finalize) - Execute callback on finalization only
+- [map](/api/operators/map) - Transform values (not side-effects)
+- [switchMap](/api/operators/switchMap) - Map to inner observables
+
+## See Also
+
+- [RxJS tap documentation](https://rxjs.dev/api/operators/tap)
+- [Guide: Side Effects](/guides/side-effects)

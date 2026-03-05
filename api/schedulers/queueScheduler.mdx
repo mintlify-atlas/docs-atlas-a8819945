@@ -1,0 +1,484 @@
+---
+title: 'queueScheduler'
+description: 'Execute tasks synchronously in a queue'
+---
+
+## Overview
+
+The `queueScheduler` scheduler executes tasks synchronously when used without delay, but queues recursive tasks instead of executing them immediately. This prevents stack overflow errors in recursive operations while maintaining synchronous execution order.
+
+<Note>
+  **Key Feature**: queueScheduler executes synchronously but queues recursive calls, making it perfect for recursive operations that would otherwise cause stack overflow.
+</Note>
+
+## Type
+
+```typescript
+const queueScheduler: QueueScheduler
+```
+
+## Usage
+
+<ParamField path="queueScheduler.schedule" type="(work: (state?: any) => void, delay?: number, state?: any) => Subscription">
+  Schedule a task to execute synchronously (or asynchronously if delay > 0).
+  
+  - `work`: Function to execute
+  - `delay`: Delay in milliseconds (0 = synchronous, >0 = async like asyncScheduler)
+  - `state`: Optional state to pass to the work function
+</ParamField>
+
+<ParamField path="queueScheduler.now" type="() => number">
+  Returns the current time as milliseconds since Unix epoch.
+</ParamField>
+
+## Usage Examples
+
+### Basic Synchronous Queue
+
+Execute tasks synchronously in order:
+
+<CodeGroup>
+```typescript Simple queue
+import { queueScheduler } from 'rxjs';
+
+console.log('Start');
+
+queueScheduler.schedule(() => console.log('Task 1'));
+queueScheduler.schedule(() => console.log('Task 2'));
+queueScheduler.schedule(() => console.log('Task 3'));
+
+console.log('End');
+
+// Output:
+// Start
+// Task 1
+// Task 2
+// Task 3
+// End
+```
+
+```typescript Compare with asyncScheduler
+import { queueScheduler, asyncScheduler } from 'rxjs';
+
+console.log('Start');
+
+queueScheduler.schedule(() => console.log('Queue (sync)'));
+asyncScheduler.schedule(() => console.log('Async'));
+
+console.log('End');
+
+// Output:
+// Start
+// Queue (sync)
+// End
+// Async
+```
+</CodeGroup>
+
+### Recursive Scheduling
+
+Prevent stack overflow in recursive operations:
+
+```typescript
+import { queueScheduler } from 'rxjs';
+
+queueScheduler.schedule(function recursiveTask(state: number) {
+  if (state !== 0) {
+    console.log('before', state);
+    
+    // Recursive schedule - queued, not immediate
+    this.schedule(state - 1);
+    
+    console.log('after', state);
+  }
+}, 0, 3);
+
+// Output:
+// before 3
+// after 3
+// before 2
+// after 2
+// before 1
+// after 1
+
+// Compare with regular recursion:
+function regularRecursion(n: number) {
+  if (n !== 0) {
+    console.log('before', n);
+    regularRecursion(n - 1); // Immediate recursion
+    console.log('after', n);
+  }
+}
+
+regularRecursion(3);
+// Output:
+// before 3
+// before 2
+// before 1
+// after 1
+// after 2
+// after 3
+```
+
+### Queue-Based Iteration
+
+Process items in a queue:
+
+```typescript
+import { queueScheduler } from 'rxjs';
+
+interface Task {
+  id: number;
+  name: string;
+}
+
+const tasks: Task[] = [
+  { id: 1, name: 'Task 1' },
+  { id: 2, name: 'Task 2' },
+  { id: 3, name: 'Task 3' }
+];
+
+function processTasks(taskList: Task[]) {
+  queueScheduler.schedule(function processNext(index: number) {
+    if (index < taskList.length) {
+      const task = taskList[index];
+      console.log(`Processing: ${task.name}`);
+      
+      // Queue next task
+      this.schedule(index + 1);
+    } else {
+      console.log('All tasks complete');
+    }
+  }, 0, 0);
+}
+
+processTasks(tasks);
+
+// Output:
+// Processing: Task 1
+// Processing: Task 2
+// Processing: Task 3
+// All tasks complete
+```
+
+### Controlled Execution Order
+
+Ensure tasks complete before others start:
+
+```typescript
+import { queueScheduler } from 'rxjs';
+
+function outerTask() {
+  console.log('Outer: start');
+  
+  queueScheduler.schedule(() => {
+    console.log('Inner task');
+  });
+  
+  console.log('Outer: end');
+}
+
+queueScheduler.schedule(outerTask);
+queueScheduler.schedule(() => console.log('Next task'));
+
+// Output:
+// Outer: start
+// Outer: end
+// Inner task
+// Next task
+```
+
+### State Machine
+
+Implement a state machine with queueScheduler:
+
+```typescript
+import { queueScheduler } from 'rxjs';
+
+type State = 'idle' | 'loading' | 'success' | 'error';
+
+interface StateMachine {
+  state: State;
+  data?: any;
+  error?: Error;
+}
+
+function stateMachine(initial: StateMachine) {
+  queueScheduler.schedule(function process(machine: StateMachine) {
+    console.log('Current state:', machine.state);
+    
+    switch (machine.state) {
+      case 'idle':
+        this.schedule({ ...machine, state: 'loading' });
+        break;
+        
+      case 'loading':
+        // Simulate async operation
+        setTimeout(() => {
+          const success = Math.random() > 0.5;
+          this.schedule({
+            ...machine,
+            state: success ? 'success' : 'error',
+            data: success ? { result: 'Data' } : undefined,
+            error: success ? undefined : new Error('Failed')
+          });
+        }, 1000);
+        break;
+        
+      case 'success':
+        console.log('Success:', machine.data);
+        break;
+        
+      case 'error':
+        console.log('Error:', machine.error?.message);
+        break;
+    }
+  }, 0, initial);
+}
+
+stateMachine({ state: 'idle' });
+```
+
+### Synchronous Observable
+
+Create synchronous Observable behavior:
+
+```typescript
+import { of, observeOn, queueScheduler } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+console.log('Start');
+
+of(1, 2, 3).pipe(
+  observeOn(queueScheduler),
+  tap(value => console.log('Processing:', value))
+).subscribe(value => console.log('Received:', value));
+
+console.log('End');
+
+// Output:
+// Start
+// Processing: 1
+// Received: 1
+// Processing: 2
+// Received: 2
+// Processing: 3
+// Received: 3
+// End
+```
+
+## How It Works
+
+The queueScheduler maintains an internal queue:
+
+```typescript
+// Simplified internal implementation
+class QueueScheduler {
+  private queue: Array<() => void> = [];
+  private active = false;
+  
+  schedule(work: Function, delay: number = 0, state?: any) {
+    if (delay > 0) {
+      // Delegate to asyncScheduler for delayed tasks
+      return setTimeout(() => work(state), delay);
+    }
+    
+    // Add to queue
+    this.queue.push(() => work.call(this, state));
+    
+    // Process queue if not already active
+    if (!this.active) {
+      this.flush();
+    }
+  }
+  
+  private flush() {
+    this.active = true;
+    
+    while (this.queue.length > 0) {
+      const work = this.queue.shift()!;
+      work();
+    }
+    
+    this.active = false;
+  }
+}
+```
+
+## Key Characteristics
+
+<Tip>
+  **queueScheduler behavior:**
+  
+  - Without delay: Executes synchronously
+  - Recursive calls: Queued, not immediate
+  - Prevents: Stack overflow in recursion
+  - Order: FIFO (First-In-First-Out)
+</Tip>
+
+## Prevent Stack Overflow
+
+Compare recursive approaches:
+
+```typescript
+import { queueScheduler } from 'rxjs';
+
+// ❌ Regular recursion - can overflow
+function countdownRegular(n: number) {
+  if (n > 0) {
+    console.log(n);
+    countdownRegular(n - 1); // Stack grows
+  }
+}
+
+// countdownRegular(100000); // Stack overflow!
+
+// ✅ Queue scheduler - no overflow
+queueScheduler.schedule(function countdownQueue(n: number) {
+  if (n > 0) {
+    console.log(n);
+    this.schedule(n - 1); // Queued, not stacked
+  }
+}, 0, 100000);
+
+// Works fine - no stack overflow!
+```
+
+## Common Use Cases
+
+1. **Recursive Operations**: Safely handle deep recursion
+2. **Synchronous Iteration**: Process items synchronously
+3. **Testing**: Synchronous execution for predictable tests
+4. **State Machines**: Control state transitions
+5. **Queue Processing**: FIFO task processing
+6. **Algorithm Implementation**: Implement iterative algorithms
+
+## Behavior with Delay
+
+<Note>
+  When used with a delay > 0, queueScheduler behaves like asyncScheduler (uses setTimeout).
+</Note>
+
+```typescript
+import { queueScheduler } from 'rxjs';
+
+console.log('Start');
+
+// With delay - behaves like asyncScheduler
+queueScheduler.schedule(() => console.log('Delayed'), 1000);
+
+// Without delay - synchronous
+queueScheduler.schedule(() => console.log('Immediate'));
+
+console.log('End');
+
+// Output:
+// Start
+// Immediate
+// End
+// Delayed (after 1 second)
+```
+
+## Comparison with Other Schedulers
+
+| Scheduler | Execution | Recursive | Queue | Use Case |
+|-----------|-----------|-----------|-------|----------|
+| queueScheduler | Sync | Queued | Yes | Safe recursion |
+| asapScheduler | Async (micro) | Async | No | Defer to next tick |
+| asyncScheduler | Async (macro) | Async | No | Time delays |
+
+```typescript
+import { queueScheduler, asapScheduler, asyncScheduler } from 'rxjs';
+
+function recursiveTest(scheduler: any, n: number) {
+  scheduler.schedule(function(state: number) {
+    if (state > 0) {
+      console.log(scheduler.constructor.name, state);
+      this.schedule(state - 1);
+    }
+  }, 0, n);
+}
+
+console.log('Queue (synchronous):');
+recursiveTest(queueScheduler, 3);
+
+console.log('\nASAP (asynchronous):');
+recursiveTest(asapScheduler, 3);
+```
+
+## When to Use queueScheduler
+
+<Tip>
+  Use `queueScheduler` when you need:
+  
+  - Synchronous execution order
+  - Safe recursive operations
+  - Predictable, testable code
+  - FIFO queue behavior
+</Tip>
+
+## Performance Considerations
+
+- Synchronous execution - no async overhead
+- Good for CPU-bound synchronous tasks
+- Can block rendering if tasks are too long
+- Use async schedulers for I/O or time-based operations
+
+## Testing Benefits
+
+```typescript
+import { of, observeOn, queueScheduler } from 'rxjs';
+
+// Synchronous testing
+const results: number[] = [];
+
+of(1, 2, 3).pipe(
+  observeOn(queueScheduler)
+).subscribe(value => results.push(value));
+
+// Immediately available - no async waiting
+expect(results).toEqual([1, 2, 3]);
+```
+
+## Best Practices
+
+```typescript
+import { queueScheduler, asyncScheduler } from 'rxjs';
+
+// ✅ Good - Safe recursion
+queueScheduler.schedule(function recursive(n: number) {
+  if (n > 0) this.schedule(n - 1);
+}, 0, 10000);
+
+// ✅ Good - Synchronous iteration
+array.forEach(item => {
+  queueScheduler.schedule(() => process(item));
+});
+
+// ❌ Avoid - Time delays (use asyncScheduler)
+queueScheduler.schedule(work, 1000); // Use asyncScheduler instead
+
+// ❌ Avoid - Very long synchronous work
+queueScheduler.schedule(() => {
+  for (let i = 0; i < 10000000; i++) {
+    // Blocks UI
+  }
+});
+```
+
+## Related Schedulers
+
+- [asyncScheduler](/api/schedulers/asyncScheduler) - Asynchronous macrotask
+- [asapScheduler](/api/schedulers/asapScheduler) - Asynchronous microtask
+- [animationFrameScheduler](/api/schedulers/animationFrameScheduler) - Animation frame
+
+## Related Operators
+
+- [observeOn](/api/operators/observeOn) - Control notification scheduler
+- [subscribeOn](/api/operators/subscribeOn) - Control subscription scheduler
+
+## See Also
+
+- [RxJS queueScheduler documentation](https://rxjs.dev/api/index/const/queueScheduler)
+- [Schedulers Guide](/guides/schedulers)
+- [Recursion Patterns](/guides/recursion)

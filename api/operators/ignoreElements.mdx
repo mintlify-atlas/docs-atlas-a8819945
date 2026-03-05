@@ -1,0 +1,352 @@
+---
+title: ignoreElements
+description: Ignores all values from the source and only passes completion or error notifications
+---
+
+## Overview
+
+Ignores all items emitted by the source Observable and only passes calls of `complete` or `error`.
+
+<Note>
+This operator is useful when you care about **when** a stream completes or errors, but not about the values it emits. It effectively suppresses all `next` notifications.
+</Note>
+
+## Type Signature
+
+```typescript
+function ignoreElements(): OperatorFunction<unknown, never>
+```
+
+## Parameters
+
+This operator takes **no parameters**.
+
+## Returns
+
+**`OperatorFunction<unknown, never>`** - A function that returns an empty Observable that only calls `complete` or `error`, based on which one is called by the source Observable.
+
+## How It Works
+
+1. Subscribes to the source Observable
+2. **Ignores all `next` notifications** (never calls the observer's `next` handler)
+3. **Forwards `complete`** notification when source completes
+4. **Forwards `error`** notification if source errors
+
+<Tip>
+Think of `ignoreElements` as a filter that blocks all values but lets completion and error events through.
+</Tip>
+
+## Usage Examples
+
+### Basic Example: Ignore All Values
+
+```typescript
+import { of, ignoreElements } from 'rxjs';
+
+of('you', 'talking', 'to', 'me')
+  .pipe(ignoreElements())
+  .subscribe({
+    next: word => console.log(word),
+    error: err => console.log('error:', err),
+    complete: () => console.log('the end'),
+  });
+
+// Output:
+// 'the end'
+```
+
+### Wait for Operation to Complete
+
+```typescript
+import { interval, take, ignoreElements, tap } from 'rxjs';
+
+const operation$ = interval(1000).pipe(
+  take(5),
+  tap(i => console.log('Processing step', i)),
+  ignoreElements()
+);
+
+operation$.subscribe({
+  complete: () => console.log('Operation complete!')
+});
+
+// Output:
+// Processing step 0
+// Processing step 1
+// Processing step 2
+// Processing step 3
+// Processing step 4
+// Operation complete!
+```
+
+### Track API Call Completion
+
+```typescript
+import { ignoreElements, tap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const saveData$ = ajax.post('/api/save', { data: 'important' }).pipe(
+  tap(response => console.log('Saved with ID:', response.id)),
+  ignoreElements() // Don't need the response downstream
+);
+
+saveData$.subscribe({
+  complete: () => {
+    console.log('Save operation completed');
+    showSuccessMessage();
+  },
+  error: err => {
+    console.error('Save failed:', err);
+    showErrorMessage();
+  }
+});
+```
+
+<CodeGroup>
+```typescript Loading Indicator
+import { ignoreElements, finalize } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const spinner = document.querySelector('#spinner') as HTMLElement;
+
+function performOperation() {
+  spinner.style.display = 'block';
+  
+  return ajax.post('/api/operation', { data: 'value' }).pipe(
+    ignoreElements(),
+    finalize(() => {
+      spinner.style.display = 'none';
+    })
+  );
+}
+
+performOperation().subscribe(
+  () => {}, // Never called
+  err => console.error('Operation failed:', err),
+  () => console.log('Operation succeeded')
+);
+```
+
+```typescript Batch Operations
+import { forkJoin, ignoreElements } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const operations = [
+  ajax.post('/api/op1', { data: 1 }).pipe(ignoreElements()),
+  ajax.post('/api/op2', { data: 2 }).pipe(ignoreElements()),
+  ajax.post('/api/op3', { data: 3 }).pipe(ignoreElements())
+];
+
+forkJoin(operations).subscribe(
+  () => console.log('All operations completed'),
+  err => console.error('One or more operations failed:', err)
+);
+```
+
+```typescript Side Effect Streams
+import { fromEvent, ignoreElements, tap } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click').pipe(
+  tap(event => {
+    // Track analytics
+    trackClick(event);
+    // Update state
+    incrementClickCount();
+  }),
+  ignoreElements() // Don't propagate clicks
+);
+
+clicks$.subscribe({
+  complete: () => console.log('Click tracking ended')
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `ignoreElements` when:
+- You only care about **completion or error**, not the values
+- Implementing **"wait until done"** logic
+- Tracking **operation lifecycle** without caring about results
+- Creating **side-effect-only** streams with `tap`
+- Coordinating **multiple operations** where values don't matter
+
+### Don't use `ignoreElements` when:
+- You need to **access the values** emitted by the source
+- You need to **transform** values (use `map`, `switchMap`, etc.)
+- You want to **conditionally** ignore values (use `filter` instead)
+- The stream never completes (the operator would never emit anything)
+
+## Common Patterns
+
+### Wait for Multiple Operations
+
+```typescript
+import { forkJoin, ignoreElements } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const initialization$ = forkJoin([
+  ajax.post('/api/init-cache', {}).pipe(ignoreElements()),
+  ajax.get('/api/load-config').pipe(ignoreElements()),
+  ajax.post('/api/register-session', {}).pipe(ignoreElements())
+]);
+
+initialization$.subscribe(
+  () => console.log('App initialized'),
+  err => console.error('Initialization failed:', err)
+);
+```
+
+### Convert to Completion Signal
+
+```typescript
+import { interval, take, ignoreElements, startWith } from 'rxjs';
+
+// Wait for timer to complete, then signal
+const timer$ = interval(1000).pipe(
+  take(5),
+  ignoreElements(),
+  startWith('start') // Add a signal value
+);
+
+timer$.subscribe(
+  value => console.log('Value:', value),
+  err => console.error('Error:', err),
+  () => console.log('Timer completed')
+);
+// Output:
+// Value: start
+// Timer completed (after 5 seconds)
+```
+
+### Chain Operations Without Values
+
+```typescript
+import { of, concatMap, ignoreElements, tap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const workflow$ = of(null).pipe(
+  concatMap(() => 
+    ajax.post('/api/step1', {}).pipe(
+      tap(() => console.log('Step 1 done')),
+      ignoreElements()
+    )
+  ),
+  concatMap(() => 
+    ajax.post('/api/step2', {}).pipe(
+      tap(() => console.log('Step 2 done')),
+      ignoreElements()
+    )
+  ),
+  concatMap(() => 
+    ajax.post('/api/step3', {}).pipe(
+      tap(() => console.log('Step 3 done')),
+      ignoreElements()
+    )
+  )
+);
+
+workflow$.subscribe(
+  () => console.log('Workflow complete')
+);
+```
+
+### Error Handling with ignoreElements
+
+```typescript
+import { of, ignoreElements, catchError } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const operation$ = ajax.post('/api/risky-operation', {}).pipe(
+  ignoreElements(),
+  catchError(err => {
+    console.error('Operation failed:', err);
+    // Return empty to complete the stream
+    return of(undefined);
+  })
+);
+
+operation$.subscribe({
+  complete: () => console.log('Done (success or handled error)')
+});
+```
+
+<Warning>
+Be careful with infinite streams. If your source never completes or errors, `ignoreElements` will never emit anything, and your subscription will never complete.
+</Warning>
+
+## Practical Use Cases
+
+### Initialization Sequence
+
+```typescript
+import { concat, ignoreElements, tap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const initSteps = [
+  ajax.get('/api/auth').pipe(
+    tap(user => console.log('Authenticated:', user)),
+    ignoreElements()
+  ),
+  ajax.get('/api/config').pipe(
+    tap(config => console.log('Config loaded:', config)),
+    ignoreElements()
+  ),
+  ajax.post('/api/track-session', {}).pipe(
+    ignoreElements()
+  )
+];
+
+concat(...initSteps).subscribe({
+  complete: () => {
+    console.log('Initialization complete');
+    startApp();
+  },
+  error: err => {
+    console.error('Initialization failed:', err);
+    showError();
+  }
+});
+```
+
+### Progress Tracking
+
+```typescript
+import { interval, take, ignoreElements, tap, scan } from 'rxjs';
+
+const progress$ = interval(100).pipe(
+  take(20),
+  scan((acc) => acc + 5, 0),
+  tap(percent => updateProgressBar(percent)),
+  ignoreElements()
+);
+
+progress$.subscribe({
+  complete: () => console.log('Progress complete')
+});
+
+function updateProgressBar(percent: number) {
+  console.log(`Progress: ${percent}%`);
+}
+```
+
+<Tip>
+Combine `ignoreElements` with `tap` to create side-effect-only streams that signal completion without propagating values.
+</Tip>
+
+## TypeScript Note
+
+The return type of `ignoreElements` is `OperatorFunction<unknown, never>`, meaning:
+- It accepts any input type (`unknown`)
+- It never emits any values (`never`)
+- It only completes or errors
+
+This makes it type-safe since you cannot accidentally try to use values that will never exist.
+
+## Related Operators
+
+- **[filter](/api/operators/filter)** - Conditionally pass values through
+- **[take](/api/operators/take)** - Take first N values then complete
+- **[skip](/api/operators/skip)** - Skip first N values
+- **[tap](/api/operators/tap)** - Perform side effects (often combined with ignoreElements)
+- **[finalize](/api/operators/finalize)** - Run logic on completion or error

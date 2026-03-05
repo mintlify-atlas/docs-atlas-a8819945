@@ -1,0 +1,343 @@
+---
+title: 'concat'
+description: 'Concatenates multiple Observables sequentially, subscribing to each only after the previous completes'
+---
+
+# concat
+
+Creates an output Observable which sequentially emits all values from the first given Observable and then moves on to the next.
+
+## Import
+
+```typescript
+import { concat } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function concat<T extends readonly unknown[]>(
+  ...inputs: [...ObservableInputTuple<T>]
+): Observable<T[number]>;
+```
+
+## Parameters
+
+<ParamField path="inputs" type="...ObservableInput[]" required>
+  Multiple Observables to concatenate sequentially.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable that emits values from all input Observables in sequence. Values from the next Observable only begin emitting after the previous one completes.
+</ResponseField>
+
+## Description
+
+`concat` joins multiple Observables together by subscribing to them one at a time. It:
+
+1. Subscribes to the first Observable
+2. Emits all its values until it completes
+3. Then subscribes to the next Observable
+4. Repeats until all Observables complete
+
+**Key characteristics:**
+- Subscribes to Observables **sequentially**, not concurrently
+- Only one Observable is active at a time
+- Waits for each to complete before moving to the next
+- If any Observable errors, `concat` errors immediately
+- If any Observable never completes, subsequent ones never start
+
+## Examples
+
+### Basic Concatenation
+
+```typescript
+import { interval, take, concat } from 'rxjs';
+
+const timer1 = interval(1000).pipe(take(4)); // 0, 1, 2, 3
+const timer2 = interval(500).pipe(take(3));  // 0, 1, 2
+
+const result = concat(timer1, timer2);
+
+result.subscribe(x => console.log(x));
+
+// Output (with timing):
+// 0  (at 1s)
+// 1  (at 2s)
+// 2  (at 3s)
+// 3  (at 4s)
+// 0  (at 4.5s)
+// 1  (at 5s)
+// 2  (at 5.5s)
+```
+
+### Timer and Sequence
+
+```typescript
+import { interval, take, range, concat } from 'rxjs';
+
+const timer = interval(1000).pipe(take(4));  // Takes 4 seconds
+const sequence = range(1, 10);                // Synchronous
+
+const result = concat(timer, sequence);
+result.subscribe(x => console.log(x));
+
+// Output:
+// 0 (after 1s)
+// 1 (after 2s)
+// 2 (after 3s)
+// 3 (after 4s)
+// 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 (immediately after)
+```
+
+### Repeat an Observable
+
+```typescript
+import { interval, take, concat } from 'rxjs';
+
+const timer = interval(1000).pipe(take(2)); // 0, 1
+
+concat(timer, timer, timer).subscribe({
+  next: value => console.log(value),
+  complete: () => console.log('Done!')
+});
+
+// Output:
+// 0 (at 1s)
+// 1 (at 2s)
+// 0 (at 3s)
+// 1 (at 4s)
+// 0 (at 5s)
+// 1 (at 6s)
+// Done!
+```
+
+## Common Use Cases
+
+### Sequential HTTP Requests
+
+```typescript
+import { concat } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+import { map } from 'rxjs/operators';
+
+// Perform requests one after another
+const createUser$ = ajax.post('/api/users', { name: 'John' });
+const assignRole$ = ajax.post('/api/users/1/roles', { role: 'admin' });
+const sendEmail$ = ajax.post('/api/emails', { to: 'john@example.com' });
+
+const setup$ = concat(createUser$, assignRole$, sendEmail$);
+
+setup$.subscribe({
+  next: response => console.log('Step completed:', response.status),
+  complete: () => console.log('All steps completed!'),
+  error: err => console.error('Setup failed:', err)
+});
+```
+
+### Animation Sequence
+
+```typescript
+import { concat } from 'rxjs';
+import { timer } from 'rxjs';
+import { tap, ignoreElements } from 'rxjs/operators';
+
+const fadeIn$ = timer(1000).pipe(
+  tap(() => element.style.opacity = '1'),
+  ignoreElements()
+);
+
+const show$ = timer(3000).pipe(
+  tap(() => element.style.display = 'block'),
+  ignoreElements()
+);
+
+const fadeOut$ = timer(1000).pipe(
+  tap(() => element.style.opacity = '0'),
+  ignoreElements()
+);
+
+const animation$ = concat(fadeIn$, show$, fadeOut$);
+
+animation$.subscribe({
+  complete: () => console.log('Animation complete')
+});
+```
+
+### Sequential Data Processing
+
+```typescript
+import { concat, from } from 'rxjs';
+import { concatMap, tap } from 'rxjs/operators';
+
+const batches = [
+  [1, 2, 3],
+  [4, 5, 6],
+  [7, 8, 9]
+];
+
+// Process each batch completely before moving to next
+const processBatch = (batch: number[]) => {
+  return from(batch).pipe(
+    tap(item => console.log(`Processing item ${item}`))
+  );
+};
+
+const processAll$ = concat(
+  ...batches.map(batch => processBatch(batch))
+);
+
+processAll$.subscribe({
+  complete: () => console.log('All batches processed')
+});
+```
+
+### Multi-Step Wizard
+
+```typescript
+import { concat, Subject } from 'rxjs';
+import { take, tap } from 'rxjs/operators';
+
+const step1Complete$ = new Subject();
+const step2Complete$ = new Subject();
+const step3Complete$ = new Subject();
+
+const wizard$ = concat(
+  step1Complete$.pipe(
+    take(1),
+    tap(() => console.log('Step 1 complete, showing step 2'))
+  ),
+  step2Complete$.pipe(
+    take(1),
+    tap(() => console.log('Step 2 complete, showing step 3'))
+  ),
+  step3Complete$.pipe(
+    take(1),
+    tap(() => console.log('Step 3 complete, wizard done!'))
+  )
+);
+
+wizard$.subscribe({
+  complete: () => console.log('Wizard completed!')
+});
+
+// Trigger steps as user completes them
+step1Complete$.next();
+// Later...
+step2Complete$.next();
+// Finally...
+step3Complete$.next();
+```
+
+## Behavior with Errors
+
+```typescript
+import { concat, of, throwError } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+
+const first$ = of(1, 2, 3);
+const error$ = throwError(() => new Error('Oops!'));
+const third$ = of(4, 5, 6);
+
+// Without error handling - stops at error
+concat(first$, error$, third$).subscribe({
+  next: x => console.log(x),
+  error: err => console.error(err.message)
+});
+// Output: 1, 2, 3, "Oops!"
+// third$ never runs
+
+// With error handling - continues
+concat(
+  first$,
+  error$.pipe(catchError(() => of('recovered'))),
+  third$
+).subscribe(x => console.log(x));
+// Output: 1, 2, 3, "recovered", 4, 5, 6
+```
+
+## Comparison with Merge
+
+<CodeGroup>
+
+```typescript concat (Sequential)
+import { concat, interval, take } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const first$ = interval(1000).pipe(
+  take(3),
+  map(x => `First: ${x}`)
+);
+
+const second$ = interval(500).pipe(
+  take(3),
+  map(x => `Second: ${x}`)
+);
+
+concat(first$, second$).subscribe(console.log);
+
+// Output (sequential):
+// First: 0  (at 1s)
+// First: 1  (at 2s)
+// First: 2  (at 3s)
+// Second: 0 (at 3.5s)
+// Second: 1 (at 4s)
+// Second: 2 (at 4.5s)
+```
+
+```typescript merge (Concurrent)
+import { merge, interval, take } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const first$ = interval(1000).pipe(
+  take(3),
+  map(x => `First: ${x}`)
+);
+
+const second$ = interval(500).pipe(
+  take(3),
+  map(x => `Second: ${x}`)
+);
+
+merge(first$, second$).subscribe(console.log);
+
+// Output (interleaved):
+// Second: 0 (at 0.5s)
+// First: 0  (at 1s)
+// Second: 1 (at 1s)
+// Second: 2 (at 1.5s)
+// First: 1  (at 2s)
+// First: 2  (at 3s)
+```
+
+</CodeGroup>
+
+## Important Notes
+
+<Warning>
+  If any Observable in the sequence never completes, subsequent Observables will never be subscribed to. Use `take`, `takeUntil`, or `timeout` to ensure completion.
+</Warning>
+
+<Note>
+  `concat` is equivalent to `merge` with concurrency set to 1: `merge(...sources, 1)`
+</Note>
+
+<Tip>
+  For the operator version that works on a source Observable, use `concatWith` or the `pipe` operator `concatAll`.
+</Tip>
+
+## Related Operators
+
+- **[merge](/api/creation/merge)** - Combine Observables concurrently
+- **[zip](/api/creation/zip)** - Combine by index
+- **[forkJoin](/api/creation/forkJoin)** - Wait for all to complete
+- **concatAll** - Flatten higher-order Observable sequentially
+- **concatMap** - Map and concat
+- **startWith** - Prepend values
+- **endWith** - Append values
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/concat)

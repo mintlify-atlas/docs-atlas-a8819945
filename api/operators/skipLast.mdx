@@ -1,0 +1,108 @@
+---
+title: skipLast
+description: Skips the last N values before completion of the source Observable
+---
+
+## Overview
+
+Skip a specified number of values before the completion of an observable.
+
+<Note>
+`skipLast` uses a ring buffer to hold values until enough new values have been emitted to know that the buffered values are not part of the last N values.
+</Note>
+
+## Type Signature
+
+```typescript
+function skipLast<T>(skipCount: number): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="skipCount" type="number" required>
+  Number of elements to skip from the end of the source Observable.
+  
+  If `skipCount <= 0`, all values pass through immediately.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that skips the last `count` values emitted by the source Observable.
+
+## How It Works
+
+1. Maintains a **ring buffer** of size `skipCount`
+2. For each value:
+   - If buffer not full: adds to buffer
+   - If buffer full: emits the oldest value and adds new value to buffer
+3. On completion: discards all buffered values (they are the "last N")
+
+<Warning>
+After subscribing, unsubscribing will not result in the emission of the buffered skipped values.
+</Warning>
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { of, skipLast } from 'rxjs';
+
+const numbers = of(1, 2, 3, 4, 5);
+const skipLastTwo = numbers.pipe(skipLast(2));
+
+skipLastTwo.subscribe(x => console.log(x));
+
+// Output:
+// 1
+// 2
+// 3
+// (4 and 5 are skipped)
+```
+
+### Skip Footer Rows
+
+```typescript
+import { from, skipLast } from 'rxjs';
+
+const csvLines = [
+  'Alice,30,NYC',
+  'Bob,25,LA',
+  'Charlie,35,SF',
+  'Total: 3 rows',
+  'Generated: 2024-01-01'
+];
+
+const dataOnly$ = from(csvLines).pipe(
+  skipLast(2) // Skip footer lines
+);
+
+dataOnly$.subscribe(line => {
+  console.log('Data:', line);
+  processDataRow(line);
+});
+```
+
+### Remove Closing Elements
+
+```typescript
+import { from, skipLast } from 'rxjs';
+
+const xmlTokens = ['<data>', '<item>A</item>', '<item>B</item>', '</data>'];
+
+const itemsOnly$ = from(xmlTokens).pipe(
+  skip(1), // Skip opening tag
+  skipLast(1) // Skip closing tag
+);
+
+itemsOnly$.subscribe(console.log);
+// Output: <item>A</item>, <item>B</item>
+```
+
+## Related Operators
+
+- **[skip](/api/operators/skip)** - Skips first N values
+- **[skipUntil](/api/operators/skipUntil)** - Skips until another Observable emits
+- **[skipWhile](/api/operators/skipWhile)** - Skips while condition is true
+- **[take](/api/operators/take)** - Takes first N values
+- **[takeLast](/api/operators/takeLast)** - Takes last N values

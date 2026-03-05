@@ -1,0 +1,385 @@
+---
+title: 'Higher-Order Observables'
+description: 'Understanding and working with Observables that emit other Observables'
+---
+
+Observables most commonly emit ordinary values like strings and numbers, but surprisingly often, it is necessary to handle Observables *of* Observables, so-called higher-order Observables.
+
+## What are Higher-Order Observables?
+
+A higher-order Observable is an Observable that emits other Observables as its values. This pattern commonly occurs when working with asynchronous operations that themselves return Observables.
+
+<Note>
+  Just as a higher-order function is a function that returns a function, a higher-order Observable is an Observable that emits Observables.
+</Note>
+
+### Common Scenario
+
+Imagine you have an Observable emitting URLs that you want to fetch:
+
+```typescript
+import { of, map } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const urls$ = of(
+  'https://api.example.com/user/1',
+  'https://api.example.com/user/2',
+  'https://api.example.com/user/3'
+);
+
+const fileObservable$ = urls$.pipe(
+  map(url => ajax.getJSON(url))
+);
+
+// fileObservable$ is now Observable<Observable<any>>
+// A higher-order Observable!
+```
+
+In this example, `ajax.getJSON()` returns an Observable for each URL. The result is an Observable that emits Observables - a higher-order Observable.
+
+## The Flattening Concept
+
+<Tip>
+  The solution to working with higher-order Observables is **flattening**: converting a higher-order Observable into an ordinary Observable.
+</Tip>
+
+Flattening operators subscribe to the inner Observables and emit their values in the outer Observable stream. The key difference between flattening operators is *how* and *when* they subscribe to inner Observables.
+
+## Flattening Operators
+
+### concatMap - Sequential Processing
+
+`concatMap` subscribes to each inner Observable **one at a time**, waiting for each to complete before moving to the next.
+
+<CodeGroup>
+```typescript Basic Usage
+import { of, concatMap, delay } from 'rxjs';
+
+const source$ = of(1, 2, 3);
+
+const result$ = source$.pipe(
+  concatMap(value => 
+    of(`Request ${value}`).pipe(delay(1000))
+  )
+);
+
+result$.subscribe(console.log);
+// After 1s: "Request 1"
+// After 2s: "Request 2"
+// After 3s: "Request 3"
+```
+
+```typescript HTTP Requests
+import { of, concatMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const userIds$ = of(1, 2, 3);
+
+userIds$.pipe(
+  concatMap(id => 
+    ajax.getJSON(`https://api.example.com/user/${id}`)
+  )
+).subscribe(user => console.log(user));
+
+// Fetches users sequentially: 1, then 2, then 3
+// Maintains order even if requests complete out of order
+```
+</CodeGroup>
+
+<Accordion title="When to use concatMap">
+  - Order matters
+  - You need sequential execution
+  - Each request depends on the previous one completing
+  - Example: Multi-step form submissions, sequential file uploads
+</Accordion>
+
+### mergeMap - Concurrent Processing
+
+`mergeMap` (also known as `flatMap`) subscribes to all inner Observables **concurrently** and emits values as they arrive.
+
+<CodeGroup>
+```typescript Basic Usage
+import { of, mergeMap, delay } from 'rxjs';
+
+const source$ = of(1, 2, 3);
+
+const result$ = source$.pipe(
+  mergeMap(value => 
+    of(`Request ${value}`).pipe(delay(1000 * value))
+  )
+);
+
+result$.subscribe(console.log);
+// After 1s: "Request 1"
+// After 2s: "Request 2"
+// After 3s: "Request 3"
+// All started simultaneously!
+```
+
+```typescript Parallel HTTP Requests
+import { of, mergeMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const userIds$ = of(1, 2, 3, 4, 5);
+
+userIds$.pipe(
+  mergeMap(id => 
+    ajax.getJSON(`https://api.example.com/user/${id}`),
+    3 // Limit concurrent requests to 3
+  )
+).subscribe(user => console.log(user));
+
+// Fetches up to 3 users concurrently
+// Results may arrive in any order
+```
+</CodeGroup>
+
+<Accordion title="When to use mergeMap">
+  - Order doesn't matter
+  - You want maximum concurrency (with optional limit)
+  - Independent parallel operations
+  - Example: Loading multiple resources, batch API calls, real-time data streams
+</Accordion>
+
+### switchMap - Cancellation Strategy
+
+`switchMap` subscribes to the latest inner Observable and **cancels** the previous one when a new inner Observable arrives.
+
+<CodeGroup>
+```typescript Search Autocomplete
+import { fromEvent, switchMap, debounceTime, distinctUntilChanged } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchBox = document.getElementById('search');
+const search$ = fromEvent(searchBox, 'input');
+
+search$.pipe(
+  debounceTime(300),
+  distinctUntilChanged(),
+  switchMap(event => 
+    ajax.getJSON(`https://api.example.com/search?q=${event.target.value}`)
+  )
+).subscribe(results => displayResults(results));
+
+// Only the latest search request is kept
+// Previous requests are automatically cancelled
+```
+
+```typescript Navigation
+import { fromEvent, switchMap } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+
+clicks$.pipe(
+  switchMap(() => loadUserData())
+).subscribe(data => console.log(data));
+
+// Each click cancels the previous data load
+// Only the most recent click's data is retrieved
+```
+</CodeGroup>
+
+<Accordion title="When to use switchMap">
+  - Only the latest result matters
+  - You want to cancel previous operations
+  - Prevents race conditions
+  - Example: Search autocomplete, navigation, real-time updates, cancellable requests
+</Accordion>
+
+### exhaustMap - Ignore While Busy
+
+`exhaustMap` subscribes to the first inner Observable and **ignores** new values until the current inner Observable completes.
+
+<CodeGroup>
+```typescript Button Clicks
+import { fromEvent, exhaustMap, delay, of } from 'rxjs';
+
+const button = document.getElementById('save-button');
+const clicks$ = fromEvent(button, 'click');
+
+clicks$.pipe(
+  exhaustMap(() => 
+    saveData().pipe(
+      delay(2000) // Simulate slow network
+    )
+  )
+).subscribe(() => console.log('Saved!'));
+
+// Rapid clicks are ignored while saving
+// Prevents duplicate submissions
+```
+
+```typescript Login Button
+import { fromEvent, exhaustMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const loginButton = document.getElementById('login');
+const login$ = fromEvent(loginButton, 'click');
+
+login$.pipe(
+  exhaustMap(() => 
+    ajax.post('https://api.example.com/login', {
+      username: getUsername(),
+      password: getPassword()
+    })
+  )
+).subscribe(
+  response => handleLoginSuccess(response),
+  error => handleLoginError(error)
+);
+
+// Prevents multiple login attempts while one is in progress
+```
+</CodeGroup>
+
+<Accordion title="When to use exhaustMap">
+  - Prevent duplicate operations
+  - Ignore rapid triggers during processing
+  - Rate limiting user actions
+  - Example: Form submissions, login buttons, save operations, refresh buttons
+</Accordion>
+
+## Comparison Matrix
+
+<Note>
+  Choose the right flattening operator based on your concurrency and cancellation needs.
+</Note>
+
+| Operator | Concurrency | Order Preserved | Cancellation | Use Case |
+|----------|-------------|-----------------|--------------|----------|
+| `concatMap` | Sequential (1 at a time) | ✅ Yes | ❌ No | Sequential operations |
+| `mergeMap` | Parallel (configurable) | ❌ No | ❌ No | Independent parallel tasks |
+| `switchMap` | Latest only | ❌ No | ✅ Yes (previous) | Autocomplete, navigation |
+| `exhaustMap` | First until complete | ✅ Yes | ❌ No (ignores new) | Prevent duplicate actions |
+
+## Advanced Patterns
+
+### Nested API Calls
+
+```typescript
+import { of, switchMap, mergeMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+// Get user, then get their posts
+const userId$ = of(1);
+
+userId$.pipe(
+  // Switch to latest user
+  switchMap(userId => 
+    ajax.getJSON(`https://api.example.com/user/${userId}`)
+  ),
+  // Load all posts for that user concurrently
+  mergeMap(user => 
+    ajax.getJSON(`https://api.example.com/posts?userId=${user.id}`)
+  )
+).subscribe(posts => console.log(posts));
+```
+
+### Error Handling in Higher-Order Observables
+
+<Warning>
+  Errors in inner Observables will propagate to the outer Observable and terminate the stream unless handled.
+</Warning>
+
+```typescript
+import { of, mergeMap, catchError } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const userIds$ = of(1, 2, 999, 4); // 999 might fail
+
+userIds$.pipe(
+  mergeMap(id => 
+    ajax.getJSON(`https://api.example.com/user/${id}`).pipe(
+      catchError(error => {
+        console.error(`Failed to load user ${id}:`, error);
+        return of(null); // Return fallback value
+      })
+    )
+  )
+).subscribe(user => {
+  if (user) {
+    console.log('User loaded:', user);
+  }
+});
+
+// Stream continues even if some requests fail
+```
+
+### Combining Multiple Higher-Order Streams
+
+```typescript
+import { merge, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchQuery$ = getSearchQueryStream();
+const filterChange$ = getFilterChangeStream();
+
+// React to either search or filter changes
+merge(searchQuery$, filterChange$).pipe(
+  switchMap(params => 
+    ajax.getJSON(`https://api.example.com/search`, params)
+  )
+).subscribe(results => displayResults(results));
+```
+
+## Visual Guide
+
+```typescript
+// Source Observable
+const source$ = ---1---2---3---|
+
+// Each number triggers an inner Observable that takes time
+const innerObs = (x) => ----x----|
+
+// concatMap: Wait for each to complete
+result$ = ---1---------2---------3---------|
+
+// mergeMap: Subscribe to all immediately
+result$ = -------1---2---3---|
+
+// switchMap: Cancel previous, keep latest
+result$ = ---------------3---|
+
+// exhaustMap: Ignore while busy
+result$ = -------1---------------|
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Choose the Right Operator">
+    Understand the behavior differences and select based on your requirements:
+    - Need order? Use `concatMap`
+    - Need speed? Use `mergeMap`
+    - Need latest? Use `switchMap`
+    - Prevent duplicates? Use `exhaustMap`
+  </Step>
+
+  <Step title="Handle Errors Properly">
+    Always handle errors in inner Observables to prevent stream termination:
+    
+    ```typescript
+    source$.pipe(
+      mergeMap(value => 
+        innerObservable(value).pipe(
+          catchError(err => of(defaultValue))
+        )
+      )
+    )
+    ```
+  </Step>
+
+  <Step title="Limit Concurrency">
+    When using `mergeMap`, consider limiting concurrent subscriptions:
+    
+    ```typescript
+    source$.pipe(
+      mergeMap(value => httpRequest(value), 3) // Max 3 concurrent
+    )
+    ```
+  </Step>
+
+  <Step title="Consider Memory">
+    Be mindful of buffering in `concatMap` - queued inner Observables consume memory.
+  </Step>
+</Steps>

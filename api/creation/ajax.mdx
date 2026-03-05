@@ -1,0 +1,343 @@
+---
+title: 'ajax'
+description: 'Create an Observable for AJAX requests using XMLHttpRequest'
+---
+
+# ajax
+
+Creates an Observable that will perform an AJAX request using XMLHttpRequest. This is the most configurable option for making HTTP requests in RxJS.
+
+## Import
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+```
+
+## Type Signature
+
+```typescript
+function ajax<T>(config: AjaxConfig): Observable<AjaxResponse<T>>;
+function ajax<T>(url: string): Observable<AjaxResponse<T>>;
+
+// Helper methods
+ajax.get<T>(url: string, headers?: Record<string, string>): Observable<AjaxResponse<T>>;
+ajax.post<T>(url: string, body?: any, headers?: Record<string, string>): Observable<AjaxResponse<T>>;
+ajax.put<T>(url: string, body?: any, headers?: Record<string, string>): Observable<AjaxResponse<T>>;
+ajax.patch<T>(url: string, body?: any, headers?: Record<string, string>): Observable<AjaxResponse<T>>;
+ajax.delete<T>(url: string, headers?: Record<string, string>): Observable<AjaxResponse<T>>;
+ajax.getJSON<T>(url: string, headers?: Record<string, string>): Observable<T>;
+```
+
+## Parameters
+
+<ParamField path="config" type="AjaxConfig | string">
+  Either a configuration object or a URL string. When a string is provided, it performs a GET request.
+  
+  **AjaxConfig properties:**
+  
+  <ParamField path="url" type="string" required>
+    The URL of the request
+  </ParamField>
+  
+  <ParamField path="method" type="string" default="GET">
+    HTTP method (GET, POST, PUT, PATCH, DELETE, etc.)
+  </ParamField>
+  
+  <ParamField path="headers" type="Record<string, string>">
+    HTTP headers to send with the request (case-insensitive)
+  </ParamField>
+  
+  <ParamField path="body" type="any">
+    Request body. Automatically serialized based on content-type
+  </ParamField>
+  
+  <ParamField path="responseType" type="XMLHttpRequestResponseType" default="json">
+    Expected response type: 'json', 'text', 'blob', 'arraybuffer', 'document'
+  </ParamField>
+  
+  <ParamField path="timeout" type="number" default="0">
+    Timeout in milliseconds. 0 means no timeout
+  </ParamField>
+  
+  <ParamField path="withCredentials" type="boolean" default="false">
+    Whether to send credentials (cookies) with CORS requests
+  </ParamField>
+  
+  <ParamField path="crossDomain" type="boolean" default="false">
+    Whether this is a cross-domain request
+  </ParamField>
+  
+  <ParamField path="queryParams" type="Record<string, any>">
+    Query parameters to append to the URL
+  </ParamField>
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable<AjaxResponse<T>>" type="Observable">
+  An Observable that emits an AjaxResponse object containing:
+  
+  <ResponseField name="response" type="T">
+    The parsed response body
+  </ResponseField>
+  
+  <ResponseField name="status" type="number">
+    HTTP status code
+  </ResponseField>
+  
+  <ResponseField name="responseType" type="string">
+    The response type
+  </ResponseField>
+  
+  <ResponseField name="xhr" type="XMLHttpRequest">
+    The original XMLHttpRequest object
+  </ResponseField>
+  
+  <ResponseField name="request" type="AjaxRequest">
+    The original request configuration
+  </ResponseField>
+</ResponseField>
+
+## Description
+
+The `ajax` operator creates an Observable for XMLHttpRequest-based AJAX calls. It provides a more reactive way to handle HTTP requests compared to traditional callbacks or promises.
+
+Key features:
+- Automatic JSON parsing
+- Full TypeScript support
+- Configurable headers, timeout, and credentials
+- Progress events support
+- Proper error handling
+- Cancellation via unsubscription
+
+## Examples
+
+### Basic GET Request
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { map, catchError, of } from 'rxjs';
+
+const users$ = ajax('https://api.github.com/users?per_page=5').pipe(
+  map(response => response.response),
+  catchError(error => {
+    console.error('Error:', error);
+    return of([]);
+  })
+);
+
+users$.subscribe(users => console.log('Users:', users));
+```
+
+### POST Request with Body
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+
+const createUser$ = ajax({
+  url: 'https://api.example.com/users',
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer token123'
+  },
+  body: {
+    name: 'John Doe',
+    email: 'john@example.com'
+  }
+});
+
+createUser$.subscribe({
+  next: response => console.log('Created:', response.response),
+  error: err => console.error('Error:', err)
+});
+```
+
+### Using Helper Methods
+
+<CodeGroup>
+
+```typescript GET JSON
+import { ajax } from 'rxjs/ajax';
+
+// Returns Observable<User[]> directly (not wrapped in AjaxResponse)
+const users$ = ajax.getJSON<User[]>('https://api.example.com/users');
+
+users$.subscribe(users => console.log(users));
+```
+
+```typescript POST
+import { ajax } from 'rxjs/ajax';
+
+const body = { title: 'New Post', content: 'Content here' };
+const post$ = ajax.post('https://api.example.com/posts', body);
+
+post$.subscribe(response => console.log(response.response));
+```
+
+```typescript DELETE
+import { ajax } from 'rxjs/ajax';
+
+const delete$ = ajax.delete('https://api.example.com/posts/123');
+
+delete$.subscribe(() => console.log('Deleted successfully'));
+```
+
+</CodeGroup>
+
+### With Query Parameters
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+
+const search$ = ajax({
+  url: 'https://api.example.com/search',
+  queryParams: {
+    q: 'rxjs',
+    limit: 10,
+    offset: 0
+  }
+});
+
+// Requests: https://api.example.com/search?q=rxjs&limit=10&offset=0
+```
+
+### With Timeout
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, of } from 'rxjs';
+
+const request$ = ajax({
+  url: 'https://api.example.com/slow-endpoint',
+  timeout: 5000 // 5 seconds
+}).pipe(
+  catchError(error => {
+    if (error.name === 'AjaxTimeoutError') {
+      console.error('Request timed out');
+    }
+    return of({ response: null });
+  })
+);
+```
+
+### Cancellable Request
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+
+const request$ = ajax('https://api.example.com/data');
+
+const subscription = request$.subscribe(
+  response => console.log(response.response)
+);
+
+// Cancel the request after 1 second
+setTimeout(() => {
+  subscription.unsubscribe();
+  console.log('Request cancelled');
+}, 1000);
+```
+
+## Common Use Cases
+
+### REST API Client
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { map } from 'rxjs/operators';
+
+class ApiClient {
+  private baseUrl = 'https://api.example.com';
+  
+  get<T>(endpoint: string) {
+    return ajax.getJSON<T>(`${this.baseUrl}${endpoint}`);
+  }
+  
+  post<T>(endpoint: string, body: any) {
+    return ajax.post(`${this.baseUrl}${endpoint}`, body).pipe(
+      map(response => response.response as T)
+    );
+  }
+  
+  delete(endpoint: string) {
+    return ajax.delete(`${this.baseUrl}${endpoint}`);
+  }
+}
+
+const api = new ApiClient();
+api.get<User[]>('/users').subscribe(users => console.log(users));
+```
+
+### Polling with Error Handling
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { interval, switchMap, retry, catchError, of } from 'rxjs';
+
+const poll$ = interval(5000).pipe(
+  switchMap(() => ajax.getJSON('/api/status')),
+  retry(3),
+  catchError(error => {
+    console.error('Polling failed:', error);
+    return of({ status: 'unknown' });
+  })
+);
+
+poll$.subscribe(status => console.log('Status:', status));
+```
+
+## Error Handling
+
+<Note>
+  The ajax operator emits errors for:
+  - Network failures
+  - HTTP status codes 4xx and 5xx
+  - Timeout (AjaxTimeoutError)
+  - Aborted requests (when unsubscribed)
+</Note>
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, of } from 'rxjs';
+
+ajax('https://api.example.com/data').pipe(
+  catchError(error => {
+    if (error.status === 404) {
+      console.error('Resource not found');
+    } else if (error.status === 500) {
+      console.error('Server error');
+    } else if (error.name === 'AjaxTimeoutError') {
+      console.error('Request timed out');
+    } else {
+      console.error('Network error:', error);
+    }
+    return of({ response: null });
+  })
+).subscribe();
+```
+
+## Tips
+
+<Tip>
+  Use `ajax.getJSON()` when you only need the response body and don't care about headers or status codes.
+</Tip>
+
+<Tip>
+  The ajax operator automatically aborts the XMLHttpRequest when you unsubscribe, preventing memory leaks.
+</Tip>
+
+<Warning>
+  CORS restrictions apply. Ensure your API server is configured to accept requests from your domain.
+</Warning>
+
+## Related Operators
+
+- **[from](/api/creation/from)** - Convert promises to Observables (can be used with fetch)
+- **[fromEvent](/api/creation/fromEvent)** - Create Observables from events
+- **[defer](/api/creation/defer)** - Lazily create Observables
+
+## See Also
+
+- [RxJS ajax documentation](https://rxjs.dev/api/ajax/ajax)
+- [XMLHttpRequest MDN](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest)

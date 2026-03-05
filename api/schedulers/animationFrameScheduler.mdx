@@ -1,0 +1,461 @@
+---
+title: 'animationFrameScheduler'
+description: 'Schedule tasks to run just before browser repaint for smooth 60fps animations'
+---
+
+## Overview
+
+The `animationFrameScheduler` scheduler performs tasks when `window.requestAnimationFrame` would fire - just before the browser repaints. This makes it perfect for creating smooth browser animations that run at 60 frames per second.
+
+<Note>
+  **Key Feature**: animationFrameScheduler synchronizes with the browser's refresh rate (~16.67ms for 60fps), ensuring smooth visual updates without wasted renders.
+</Note>
+
+## Type
+
+```typescript
+const animationFrameScheduler: AnimationFrameScheduler
+```
+
+## Usage
+
+<ParamField path="animationFrameScheduler.schedule" type="(work: (state?: any) => void, delay?: number, state?: any) => Subscription">
+  Schedule a task to execute before the next browser repaint.
+  
+  - `work`: Function to execute
+  - `delay`: Delay in milliseconds (falls back to asyncScheduler if > 0)
+  - `state`: Optional state to pass to the work function
+</ParamField>
+
+<ParamField path="animationFrameScheduler.now" type="() => number">
+  Returns high-resolution timestamp (uses `performance.now()` if available, otherwise `Date.now()`).
+</ParamField>
+
+## Usage Examples
+
+### Smooth Animation
+
+Create a smooth height animation:
+
+<CodeGroup>
+```typescript Growing div
+import { animationFrameScheduler } from 'rxjs';
+
+const div = document.querySelector('div');
+div.style.cssText = 'width: 200px; background: #09c';
+
+animationFrameScheduler.schedule(function animate(height: number) {
+  div.style.height = height + 'px';
+  
+  if (height < 500) {
+    this.schedule(height + 1);
+  }
+}, 0, 0);
+
+// Smooth animation from 0 to 500px
+```
+
+```typescript With observeOn
+import { interval, observeOn, animationFrameScheduler, takeWhile } from 'rxjs';
+
+const someDiv = document.createElement('div');
+someDiv.style.cssText = 'width: 200px; background: #09c';
+document.body.appendChild(someDiv);
+
+const intervals = interval(10); // Default async scheduler
+
+intervals.pipe(
+  observeOn(animationFrameScheduler), // Observe on animation frames
+  takeWhile(val => val < 500)
+).subscribe(val => {
+  someDiv.style.height = val + 'px';
+});
+```
+</CodeGroup>
+
+### Scrolling Animation
+
+Smooth scroll animation:
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+function smoothScroll(targetY: number, duration: number = 1000) {
+  const startY = window.scrollY;
+  const distance = targetY - startY;
+  const startTime = performance.now();
+  
+  animationFrameScheduler.schedule(function scroll() {
+    const elapsed = performance.now() - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    // Easing function (ease-in-out)
+    const eased = progress < 0.5
+      ? 2 * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    
+    window.scrollTo(0, startY + distance * eased);
+    
+    if (progress < 1) {
+      this.schedule();
+    }
+  });
+}
+
+smoothScroll(1000); // Scroll to Y=1000px over 1 second
+```
+
+### Game Loop
+
+Implement a game loop with animation frames:
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+interface GameState {
+  x: number;
+  y: number;
+  velocityX: number;
+  velocityY: number;
+}
+
+class Game {
+  private state: GameState = {
+    x: 0,
+    y: 0,
+    velocityX: 2,
+    velocityY: 1
+  };
+  
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  
+  start(): void {
+    this.canvas = document.querySelector('canvas');
+    this.ctx = this.canvas.getContext('2d');
+    
+    animationFrameScheduler.schedule(() => this.gameLoop());
+  }
+  
+  private gameLoop(): void {
+    // Update game state
+    this.state.x += this.state.velocityX;
+    this.state.y += this.state.velocityY;
+    
+    // Bounce off edges
+    if (this.state.x <= 0 || this.state.x >= this.canvas.width) {
+      this.state.velocityX *= -1;
+    }
+    if (this.state.y <= 0 || this.state.y >= this.canvas.height) {
+      this.state.velocityY *= -1;
+    }
+    
+    // Render
+    this.render();
+    
+    // Schedule next frame
+    animationFrameScheduler.schedule(() => this.gameLoop());
+  }
+  
+  private render(): void {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = '#09c';
+    this.ctx.fillRect(this.state.x, this.state.y, 20, 20);
+  }
+}
+
+const game = new Game();
+game.start();
+```
+
+### Progress Bar Animation
+
+Animate a progress bar:
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+function animateProgress(targetPercent: number, duration: number = 500) {
+  const progressBar = document.querySelector('.progress-bar');
+  const startPercent = parseFloat(progressBar.style.width) || 0;
+  const diff = targetPercent - startPercent;
+  const startTime = performance.now();
+  
+  animationFrameScheduler.schedule(function update() {
+    const elapsed = performance.now() - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    const currentPercent = startPercent + diff * progress;
+    progressBar.style.width = currentPercent + '%';
+    progressBar.textContent = Math.round(currentPercent) + '%';
+    
+    if (progress < 1) {
+      this.schedule();
+    }
+  });
+}
+
+animateProgress(75); // Animate to 75%
+```
+
+### Particle System
+
+Create a particle animation:
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+}
+
+class ParticleSystem {
+  private particles: Particle[] = [];
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+  }
+  
+  emit(x: number, y: number, count: number = 10): void {
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 5,
+        vy: (Math.random() - 0.5) * 5,
+        life: 1.0
+      });
+    }
+  }
+  
+  start(): void {
+    animationFrameScheduler.schedule(() => this.update());
+  }
+  
+  private update(): void {
+    // Update particles
+    this.particles = this.particles.filter(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.1; // Gravity
+      p.life -= 0.01;
+      return p.life > 0;
+    });
+    
+    // Render
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.particles.forEach(p => {
+      this.ctx.fillStyle = `rgba(255, 100, 0, ${p.life})`;
+      this.ctx.fillRect(p.x, p.y, 3, 3);
+    });
+    
+    // Schedule next frame
+    animationFrameScheduler.schedule(() => this.update());
+  }
+}
+
+const particles = new ParticleSystem(canvas);
+particles.emit(200, 200, 50);
+particles.start();
+```
+
+### FPS Counter
+
+Track frames per second:
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+class FPSCounter {
+  private frames = 0;
+  private lastTime = performance.now();
+  private fps = 0;
+  
+  start(): void {
+    animationFrameScheduler.schedule(() => this.update());
+  }
+  
+  private update(): void {
+    this.frames++;
+    const currentTime = performance.now();
+    
+    if (currentTime >= this.lastTime + 1000) {
+      this.fps = Math.round((this.frames * 1000) / (currentTime - this.lastTime));
+      document.getElementById('fps').textContent = `${this.fps} FPS`;
+      
+      this.frames = 0;
+      this.lastTime = currentTime;
+    }
+    
+    animationFrameScheduler.schedule(() => this.update());
+  }
+}
+
+const fpsCounter = new FPSCounter();
+fpsCounter.start();
+```
+
+## How It Works
+
+`animationFrameScheduler` uses `requestAnimationFrame`:
+
+```typescript
+// Simplified internal implementation
+class AnimationFrameScheduler {
+  schedule(work: Function, delay: number = 0) {
+    if (delay > 0) {
+      // Fall back to setTimeout for delayed tasks
+      return setTimeout(work, delay);
+    } else {
+      // Use requestAnimationFrame for immediate tasks
+      const id = requestAnimationFrame(work);
+      return {
+        unsubscribe: () => cancelAnimationFrame(id)
+      };
+    }
+  }
+  
+  now() {
+    return (typeof performance !== 'undefined' && performance.now)
+      ? performance.now()
+      : Date.now();
+  }
+}
+```
+
+## Timing Characteristics
+
+<Tip>
+  **Animation Frame Timing:**
+  
+  - Frequency: ~60 times per second (60fps)
+  - Interval: ~16.67ms between frames
+  - Synced: With browser's refresh rate
+  - Paused: When tab is not visible (saves CPU)
+</Tip>
+
+### Frame Budget
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+let lastTime = performance.now();
+
+animationFrameScheduler.schedule(function measure() {
+  const currentTime = performance.now();
+  const frameTime = currentTime - lastTime;
+  
+  console.log(`Frame time: ${frameTime.toFixed(2)}ms`);
+  
+  if (frameTime > 16.67) {
+    console.warn('Frame dropped! (> 16.67ms)');
+  }
+  
+  lastTime = currentTime;
+  this.schedule();
+});
+```
+
+## Common Use Cases
+
+1. **DOM Animations**: Smooth CSS-like animations
+2. **Canvas Rendering**: Game loops, visualizations
+3. **Scroll Animations**: Parallax, smooth scrolling
+4. **UI Transitions**: Smooth state transitions
+5. **Data Visualization**: Real-time charts, graphs
+6. **Particle Effects**: Explosions, trails, etc.
+
+## Comparison with Other Schedulers
+
+| Scheduler | Timing | FPS | Use Case |
+|-----------|--------|-----|----------|
+| animationFrameScheduler | ~16.67ms | ~60 | Visual animations |
+| asyncScheduler | ~4ms+ | Variable | Time delays |
+| asapScheduler | &lt;1ms | N/A | Next tick |
+| queueScheduler | 0ms | N/A | Synchronous |
+
+## Performance Benefits
+
+<Note>
+  **Why use animationFrameScheduler:**
+  
+  - Browser-optimized timing (60fps)
+  - Automatic pause when tab hidden
+  - No wasted renders
+  - Battery-friendly on mobile
+  - Synced with display refresh
+</Note>
+
+## Best Practices
+
+```typescript
+import { animationFrameScheduler, asyncScheduler } from 'rxjs';
+
+// ✅ Good - Visual updates
+animationFrameScheduler.schedule(() => {
+  updateAnimation();
+});
+
+// ✅ Good - Keep work under 16ms
+animationFrameScheduler.schedule(() => {
+  // Fast rendering logic
+  render();
+});
+
+// ❌ Avoid - Heavy computation in animation frame
+animationFrameScheduler.schedule(() => {
+  expensiveCalculation(); // Causes frame drops
+  render();
+});
+
+// ✅ Better - Offload heavy work
+expensiveCalculation();
+animationFrameScheduler.schedule(() => {
+  render(cachedResult);
+});
+
+// ❌ Avoid - Non-visual operations
+animationFrameScheduler.schedule(() => {
+  saveToDatabase(); // Use asyncScheduler instead
+});
+```
+
+## Cleanup
+
+```typescript
+import { animationFrameScheduler } from 'rxjs';
+
+const subscription = animationFrameScheduler.schedule(function animate() {
+  render();
+  this.schedule(); // Continue animation
+});
+
+// Stop animation
+subscription.unsubscribe();
+```
+
+## Related Schedulers
+
+- [asyncScheduler](/api/schedulers/asyncScheduler) - General async operations
+- [asapScheduler](/api/schedulers/asapScheduler) - Microtask queue
+- [queueScheduler](/api/schedulers/queueScheduler) - Synchronous queue
+
+## Related Operators
+
+- [observeOn](/api/operators/observeOn) - Control notification timing
+- [interval](/api/observables/interval) - Periodic emissions
+- [animationFrames](/api/observables/animationFrames) - Observable of animation frames
+
+## See Also
+
+- [RxJS animationFrameScheduler documentation](https://rxjs.dev/api/index/const/animationFrameScheduler)
+- [Schedulers Guide](/guides/schedulers)
+- [requestAnimationFrame API](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame)
+- [Animation Performance](/guides/animation-performance)

@@ -1,122 +1,212 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "RxJS",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#d6138d",
+    "light": "#97238c",
+    "dark": "#d6138d"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/5aa6f814-18d6-432b-883e-a791312dc0f4.png",
+  "logo": {
+    "light": "https://media.brand.dev/5aa6f814-18d6-432b-883e-a791312dc0f4.png",
+    "dark": "https://media.brand.dev/5aa6f814-18d6-432b-883e-a791312dc0f4.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/ReactiveX/rxjs"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/ReactiveX/rxjs"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/observable",
+              "concepts/observer",
+              "concepts/subscription",
+              "concepts/operators",
+              "concepts/subject",
+              "concepts/scheduler"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/importing",
+              "guides/higher-order-observables",
+              "guides/testing",
+              "guides/core-semantics"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Migration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "migration/v6-to-v7",
+              "migration/breaking-changes",
+              "migration/deprecations"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "api/overview"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Creation Operators",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/creation/ajax",
+              "api/creation/bindCallback",
+              "api/creation/bindNodeCallback",
+              "api/creation/combineLatest",
+              "api/creation/concat",
+              "api/creation/defer",
+              "api/creation/forkJoin",
+              "api/creation/from",
+              "api/creation/fromEvent",
+              "api/creation/fromEventPattern",
+              "api/creation/generate",
+              "api/creation/interval",
+              "api/creation/merge",
+              "api/creation/of",
+              "api/creation/range",
+              "api/creation/throwError",
+              "api/creation/timer",
+              "api/creation/zip"
+            ]
+          },
+          {
+            "group": "Transformation Operators",
+            "pages": [
+              "api/operators/buffer",
+              "api/operators/bufferCount",
+              "api/operators/bufferTime",
+              "api/operators/bufferToggle",
+              "api/operators/bufferWhen",
+              "api/operators/concatMap",
+              "api/operators/exhaustMap",
+              "api/operators/expand",
+              "api/operators/groupBy",
+              "api/operators/map",
+              "api/operators/mergeMap",
+              "api/operators/scan",
+              "api/operators/switchMap",
+              "api/operators/window",
+              "api/operators/windowCount",
+              "api/operators/windowTime",
+              "api/operators/windowToggle",
+              "api/operators/windowWhen"
+            ]
+          },
+          {
+            "group": "Filtering Operators",
+            "pages": [
+              "api/operators/audit",
+              "api/operators/auditTime",
+              "api/operators/debounce",
+              "api/operators/debounceTime",
+              "api/operators/distinct",
+              "api/operators/distinctUntilChanged",
+              "api/operators/elementAt",
+              "api/operators/filter",
+              "api/operators/first",
+              "api/operators/ignoreElements",
+              "api/operators/last",
+              "api/operators/sample",
+              "api/operators/sampleTime",
+              "api/operators/skip",
+              "api/operators/skipLast",
+              "api/operators/skipUntil",
+              "api/operators/skipWhile",
+              "api/operators/take",
+              "api/operators/takeLast",
+              "api/operators/takeUntil",
+              "api/operators/takeWhile",
+              "api/operators/throttle",
+              "api/operators/throttleTime"
+            ]
+          },
+          {
+            "group": "Combination Operators",
+            "pages": [
+              "api/operators/combineLatestAll",
+              "api/operators/combineLatestWith",
+              "api/operators/concatAll",
+              "api/operators/concatWith",
+              "api/operators/mergeAll",
+              "api/operators/mergeWith",
+              "api/operators/startWith",
+              "api/operators/endWith",
+              "api/operators/withLatestFrom",
+              "api/operators/zipAll",
+              "api/operators/zipWith"
+            ]
+          },
+          {
+            "group": "Error Handling Operators",
+            "pages": [
+              "api/operators/catchError",
+              "api/operators/retry",
+              "api/operators/retryWhen"
+            ]
+          },
+          {
+            "group": "Utility Operators",
+            "pages": [
+              "api/operators/tap",
+              "api/operators/delay",
+              "api/operators/delayWhen",
+              "api/operators/finalize",
+              "api/operators/observeOn",
+              "api/operators/subscribeOn",
+              "api/operators/timeout",
+              "api/operators/timestamp",
+              "api/operators/toArray"
+            ]
+          },
+          {
+            "group": "Subjects",
+            "pages": [
+              "api/subjects/Subject",
+              "api/subjects/BehaviorSubject",
+              "api/subjects/ReplaySubject",
+              "api/subjects/AsyncSubject"
+            ]
+          },
+          {
+            "group": "Schedulers",
+            "pages": [
+              "api/schedulers/asyncScheduler",
+              "api/schedulers/asapScheduler",
+              "api/schedulers/queueScheduler",
+              "api/schedulers/animationFrameScheduler"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

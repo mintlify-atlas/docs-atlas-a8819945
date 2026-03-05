@@ -1,0 +1,52 @@
+---
+title: takeLast
+description: Emits the last N values from the source Observable after it completes
+---
+
+## Overview
+
+Waits for the source to complete, then emits the last N values from the source.
+
+<Note>
+`takeLast` results in an observable that will hold up to `count` values in memory until the source completes. It then pushes all values in memory to the consumer in the order they were received.
+</Note>
+
+## Type Signature
+
+```typescript
+function takeLast<T>(count: number): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="count" type="number" required>
+  The maximum number of values to emit from the end of the sequence.
+  
+  If `count <= 0`, returns an empty Observable.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits at most the last `count` values emitted by the source Observable.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { range, takeLast } from 'rxjs';
+
+const many = range(1, 100);
+const lastThree = many.pipe(takeLast(3));
+
+lastThree.subscribe(x => console.log(x));
+// Output: 98, 99, 100
+```
+
+## Related Operators
+
+- **[take](/api/operators/take)** - Takes first N values
+- **[takeUntil](/api/operators/takeUntil)** - Takes until another Observable emits
+- **[takeWhile](/api/operators/takeWhile)** - Takes while condition is true
+- **[last](/api/operators/last)** - Emits only the last value
+- **[skip](/api/operators/skip)** - Skips first N values

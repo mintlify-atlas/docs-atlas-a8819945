@@ -1,0 +1,385 @@
+---
+title: 'combineLatest'
+description: 'Combines multiple Observables to emit calculated values from the latest values of each'
+---
+
+# combineLatest
+
+Combines multiple Observables to create an Observable whose values are calculated from the latest values of each of its input Observables.
+
+## Import
+
+```typescript
+import { combineLatest } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+// Array of Observables
+function combineLatest<A extends readonly unknown[]>(
+  sources: readonly [...ObservableInputTuple<A>]
+): Observable<A>;
+
+// Dictionary of Observables
+function combineLatest<T extends Record<string, ObservableInput<any>>>(
+  sourcesObject: T
+): Observable<{ [K in keyof T]: ObservedValueOf<T[K]> }>;
+
+// With result selector
+function combineLatest<A extends readonly unknown[], R>(
+  sources: readonly [...ObservableInputTuple<A>],
+  resultSelector: (...values: A) => R
+): Observable<R>;
+```
+
+## Parameters
+
+<ParamField path="sources" type="Array<ObservableInput> | Object" required>
+  Either an array of Observables or an object where values are Observables.
+</ParamField>
+
+<ParamField path="resultSelector" type="Function">
+  Optional function to transform the combined values before emission.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable that emits:
+  - An array of latest values (when given an array)
+  - An object of latest values (when given an object)
+  - The result of `resultSelector` (when provided)
+</ResponseField>
+
+## Description
+
+`combineLatest` combines values from multiple Observables. Whenever **any** input Observable emits, it:
+
+1. Collects the **latest** value from each Observable
+2. Combines them into an array or object
+3. Emits the combined result
+
+**Key characteristics:**
+- Waits for ALL Observables to emit at least once before emitting
+- Emits every time ANY Observable emits (after initial values)
+- Maintains the latest value from each Observable
+- Completes only when ALL Observables complete
+
+## Examples
+
+### Combine Two Timers
+
+```typescript
+import { timer, combineLatest } from 'rxjs';
+
+const firstTimer = timer(0, 1000);  // 0, 1, 2, 3...
+const secondTimer = timer(500, 1000); // 0, 1, 2, 3... (starts 500ms later)
+
+const combined = combineLatest([firstTimer, secondTimer]);
+
+combined.subscribe(([first, second]) => {
+  console.log(`First: ${first}, Second: ${second}`);
+});
+
+// Output:
+// First: 0, Second: 0  (at 500ms)
+// First: 1, Second: 0  (at 1000ms)
+// First: 1, Second: 1  (at 1500ms)
+// First: 2, Second: 1  (at 2000ms)
+// ...
+```
+
+### Combine Dictionary of Observables
+
+```typescript
+import { of, delay, startWith, combineLatest } from 'rxjs';
+
+const observables = {
+  a: of(1).pipe(delay(1000), startWith(0)),
+  b: of(5).pipe(delay(5000), startWith(0)),
+  c: of(10).pipe(delay(10000), startWith(0))
+};
+
+const combined = combineLatest(observables);
+
+combined.subscribe(value => console.log(value));
+
+// Output:
+// { a: 0, b: 0, c: 0 }  (immediately)
+// { a: 1, b: 0, c: 0 }  (after 1s)
+// { a: 1, b: 5, c: 0 }  (after 5s)
+// { a: 1, b: 5, c: 10 } (after 10s)
+```
+
+### Calculate BMI from Weight and Height
+
+```typescript
+import { of, combineLatest, map } from 'rxjs';
+
+const weight$ = of(70, 72, 76, 79, 75);
+const height$ = of(1.76, 1.77, 1.78);
+
+const bmi$ = combineLatest([weight$, height$]).pipe(
+  map(([w, h]) => w / (h * h))
+);
+
+bmi$.subscribe(x => console.log('BMI:', x.toFixed(2)));
+
+// Output:
+// BMI: 24.21
+// BMI: 23.94
+// BMI: 23.67
+```
+
+## Common Use Cases
+
+### Form Validation
+
+```typescript
+import { combineLatest, map } from 'rxjs';
+import { fromEvent } from 'rxjs';
+
+const emailInput = document.querySelector('#email');
+const passwordInput = document.querySelector('#password');
+
+const email$ = fromEvent(emailInput, 'input').pipe(
+  map((e: any) => e.target.value)
+);
+
+const password$ = fromEvent(passwordInput, 'input').pipe(
+  map((e: any) => e.target.value)
+);
+
+const formValid$ = combineLatest([email$, password$]).pipe(
+  map(([email, password]) => {
+    return email.includes('@') && password.length >= 8;
+  })
+);
+
+formValid$.subscribe(valid => {
+  const submitButton = document.querySelector('#submit') as HTMLButtonElement;
+  submitButton.disabled = !valid;
+});
+```
+
+### Multiple API Calls
+
+<CodeGroup>
+
+```typescript Parallel Requests
+import { combineLatest } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+import { map } from 'rxjs/operators';
+
+const user$ = ajax.getJSON('/api/user/1');
+const posts$ = ajax.getJSON('/api/user/1/posts');
+const comments$ = ajax.getJSON('/api/user/1/comments');
+
+combineLatest([user$, posts$, comments$]).pipe(
+  map(([user, posts, comments]) => ({
+    ...user,
+    postsCount: posts.length,
+    commentsCount: comments.length
+  }))
+).subscribe(profile => {
+  console.log('User profile:', profile);
+});
+```
+
+```typescript With Loading State
+import { combineLatest, BehaviorSubject } from 'rxjs';
+import { map, startWith } from 'rxjs/operators';
+
+const data1$ = fetchData1().pipe(startWith(null));
+const data2$ = fetchData2().pipe(startWith(null));
+
+const state$ = combineLatest([data1$, data2$]).pipe(
+  map(([data1, data2]) => ({
+    loading: data1 === null || data2 === null,
+    data: data1 && data2 ? { data1, data2 } : null
+  }))
+);
+
+state$.subscribe(state => {
+  if (state.loading) {
+    console.log('Loading...');
+  } else {
+    console.log('Data:', state.data);
+  }
+});
+```
+
+</CodeGroup>
+
+### Real-time Dashboard
+
+```typescript
+import { combineLatest, interval } from 'rxjs';
+import { switchMap, map } from 'rxjs/operators';
+import { ajax } from 'rxjs/ajax';
+
+// Poll different endpoints at different intervals
+const metrics$ = interval(5000).pipe(
+  switchMap(() => ajax.getJSON('/api/metrics'))
+);
+
+const alerts$ = interval(10000).pipe(
+  switchMap(() => ajax.getJSON('/api/alerts'))
+);
+
+const status$ = interval(2000).pipe(
+  switchMap(() => ajax.getJSON('/api/status'))
+);
+
+const dashboard$ = combineLatest({
+  metrics: metrics$,
+  alerts: alerts$,
+  status: status$
+});
+
+dashboard$.subscribe(data => {
+  updateDashboard(data);
+});
+```
+
+### Filter with Multiple Criteria
+
+```typescript
+import { combineLatest, BehaviorSubject } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+interface Product {
+  name: string;
+  category: string;
+  price: number;
+}
+
+const products: Product[] = [
+  { name: 'Laptop', category: 'Electronics', price: 1000 },
+  { name: 'Mouse', category: 'Electronics', price: 20 },
+  { name: 'Desk', category: 'Furniture', price: 300 }
+];
+
+const categoryFilter$ = new BehaviorSubject<string>('all');
+const priceFilter$ = new BehaviorSubject<number>(Infinity);
+const searchTerm$ = new BehaviorSubject<string>('');
+
+const filteredProducts$ = combineLatest([
+  categoryFilter$,
+  priceFilter$,
+  searchTerm$
+]).pipe(
+  map(([category, maxPrice, search]) => {
+    return products.filter(p => {
+      const matchesCategory = category === 'all' || p.category === category;
+      const matchesPrice = p.price <= maxPrice;
+      const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
+      return matchesCategory && matchesPrice && matchesSearch;
+    });
+  })
+);
+
+filteredProducts$.subscribe(products => {
+  console.log('Filtered products:', products);
+});
+
+// Update filters
+categoryFilter$.next('Electronics');
+priceFilter$.next(500);
+searchTerm$.next('lap');
+```
+
+## Behavior Details
+
+### Waiting for First Emissions
+
+`combineLatest` will NOT emit until ALL Observables have emitted at least once:
+
+```typescript
+import { combineLatest, timer, NEVER } from 'rxjs';
+
+const fast$ = timer(0, 100);   // Emits immediately and every 100ms
+const never$ = NEVER;          // Never emits
+
+combineLatest([fast$, never$]).subscribe(
+  x => console.log(x)  // This will NEVER run
+);
+```
+
+### Completion Behavior
+
+```typescript
+import { combineLatest, of, EMPTY, NEVER } from 'rxjs';
+import { delay } from 'rxjs/operators';
+
+// Completes when ALL complete
+combineLatest([
+  of(1).pipe(delay(100)),
+  of(2).pipe(delay(200))
+]).subscribe({
+  next: x => console.log(x),
+  complete: () => console.log('Complete!')  // After 200ms
+});
+
+// Never completes if one never completes
+combineLatest([
+  of(1),
+  NEVER
+]).subscribe({
+  next: x => console.log(x),    // [1, ???] - waits forever
+  complete: () => console.log('Complete!')  // Never called
+});
+
+// Completes immediately if one completes without emitting
+combineLatest([
+  of(1),
+  EMPTY
+]).subscribe({
+  next: x => console.log(x),    // Never called
+  complete: () => console.log('Complete!')  // Called immediately
+});
+```
+
+## Performance Considerations
+
+<Tip>
+  `combineLatest` emits every time ANY input Observable emits. With many frequently-emitting Observables, this can create performance issues. Consider using `debounceTime` or `throttleTime` if needed.
+</Tip>
+
+```typescript
+import { combineLatest, fromEvent } from 'rxjs';
+import { debounceTime, map } from 'rxjs/operators';
+
+const mouseMove$ = fromEvent(document, 'mousemove');
+const scroll$ = fromEvent(document, 'scroll');
+
+// This emits VERY frequently
+combineLatest([mouseMove$, scroll$]).subscribe(...);
+
+// Better: debounce the result
+combineLatest([mouseMove$, scroll$]).pipe(
+  debounceTime(100)
+).subscribe(...);
+```
+
+## Comparison with Other Operators
+
+<Note>
+  **combineLatest vs zip:** `combineLatest` uses the latest values, `zip` waits for corresponding indexed values from each Observable.
+  
+  **combineLatest vs withLatestFrom:** `combineLatest` emits when ANY source emits, `withLatestFrom` only emits when the primary Observable emits.
+  
+  **combineLatest vs forkJoin:** `combineLatest` emits continuously, `forkJoin` emits only once when all complete.
+</Note>
+
+## Related Operators
+
+- **[zip](/api/creation/zip)** - Combine by index position
+- **[forkJoin](/api/creation/forkJoin)** - Wait for all to complete
+- **[merge](/api/creation/merge)** - Emit from all concurrently
+- **withLatestFrom** - Sample latest values from other Observables
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/combineLatest)

@@ -1,0 +1,386 @@
+---
+title: Observable
+description: Learn about Observables, the core building block of RxJS that represents a lazy Push collection of multiple values over time
+---
+
+An **Observable** is the core building block of RxJS. It represents a lazy Push collection of multiple values that can be delivered synchronously or asynchronously over time.
+
+## What is an Observable?
+
+Observables fill a unique role in JavaScript's data production paradigm:
+
+|          | Single                    | Multiple              |
+| -------- | ------------------------- | --------------------- |
+| **Pull** | Function                  | Iterator              |
+| **Push** | Promise                   | **Observable**        |
+
+<Info>
+  **Key Insight**: An Observable is like a function that can return multiple values over time, both synchronously and asynchronously.
+</Info>
+
+### Pull vs Push Systems
+
+**Pull Systems**: The consumer decides when to receive data from the producer.
+- Functions: You call them to get a single value
+- Iterators: You call `next()` to get multiple values
+
+**Push Systems**: The producer decides when to send data to the consumer.
+- Promises: Deliver one value when ready
+- Observables: Deliver zero to infinite values when ready
+
+## Type Signature
+
+```typescript
+class Observable<T> {
+  constructor(subscribe?: (subscriber: Subscriber<T>) => TeardownLogic)
+  
+  subscribe(observer: Partial<Observer<T>>): Subscription
+  subscribe(next: (value: T) => void): Subscription
+  
+  pipe<A>(op1: OperatorFunction<T, A>): Observable<A>
+  pipe<A, B>(op1: OperatorFunction<T, A>, op2: OperatorFunction<A, B>): Observable<B>
+  // ... additional pipe overloads
+}
+
+type TeardownLogic = Subscription | Unsubscribable | (() => void) | void
+```
+
+## Creating Observables
+
+### Using the Constructor
+
+The Observable constructor takes a subscribe function that defines how values are produced:
+
+```typescript
+import { Observable } from 'rxjs';
+
+const observable = new Observable((subscriber) => {
+  subscriber.next(1);
+  subscriber.next(2);
+  subscriber.next(3);
+  setTimeout(() => {
+    subscriber.next(4);
+    subscriber.complete();
+  }, 1000);
+});
+```
+
+### Using Creation Operators
+
+<Tip>
+  Most commonly, you'll create Observables using creation operators like `of`, `from`, `interval`, etc.
+</Tip>
+
+<CodeGroup>
+
+```typescript of
+import { of } from 'rxjs';
+
+const numbers$ = of(1, 2, 3, 4, 5);
+```
+
+```typescript from
+import { from } from 'rxjs';
+
+const array$ = from([10, 20, 30]);
+const promise$ = from(fetch('/api/data'));
+```
+
+```typescript interval
+import { interval } from 'rxjs';
+
+const timer$ = interval(1000); // Emits 0, 1, 2, 3...
+```
+
+```typescript fromEvent
+import { fromEvent } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+```
+
+</CodeGroup>
+
+## Subscribing to Observables
+
+<Tabs>
+  <Tab title="With Observer Object">
+    ```typescript
+    observable.subscribe({
+      next(x) {
+        console.log('got value ' + x);
+      },
+      error(err) {
+        console.error('something wrong occurred: ' + err);
+      },
+      complete() {
+        console.log('done');
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="With Next Function">
+    ```typescript
+    observable.subscribe(x => console.log('got value ' + x));
+    ```
+  </Tab>
+  <Tab title="Partial Observer">
+    ```typescript
+    // Only handle next and error
+    observable.subscribe({
+      next: x => console.log(x),
+      error: err => console.error(err)
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Subscribing to an Observable **starts** its execution. Each subscription creates an independent execution.
+</Warning>
+
+## Observable Execution
+
+### Notification Types
+
+An Observable execution can deliver three types of notifications:
+
+1. **Next**: Sends a value (Number, String, Object, etc.)
+2. **Error**: Sends a JavaScript Error (terminates the execution)
+3. **Complete**: Sends no value (terminates the execution)
+
+### Observable Contract
+
+All Observable executions follow this pattern (expressed as a regular expression):
+
+```
+next*(error|complete)?
+```
+
+This means:
+- Zero to infinite Next notifications
+- Optionally followed by either one Error OR one Complete
+- Nothing can be delivered after Error or Complete
+
+```typescript
+import { Observable } from 'rxjs';
+
+const observable = new Observable((subscriber) => {
+  subscriber.next(1);
+  subscriber.next(2);
+  subscriber.next(3);
+  subscriber.complete();
+  subscriber.next(4); // Never delivered - violates the contract
+});
+```
+
+## Synchronous vs Asynchronous
+
+<Info>
+  Observables can deliver values either **synchronously** or **asynchronously** - they are not inherently async.
+</Info>
+
+<CodeGroup>
+
+```typescript Synchronous
+import { Observable } from 'rxjs';
+
+const sync$ = new Observable((subscriber) => {
+  subscriber.next(42);
+});
+
+console.log('before');
+sync$.subscribe(x => console.log(x));
+console.log('after');
+
+// Output:
+// before
+// 42
+// after
+```
+
+```typescript Asynchronous
+import { Observable } from 'rxjs';
+
+const async$ = new Observable((subscriber) => {
+  setTimeout(() => {
+    subscriber.next(42);
+  }, 1000);
+});
+
+console.log('before');
+async$.subscribe(x => console.log(x));
+console.log('after');
+
+// Output:
+// before
+// after
+// 42 (after 1 second)
+```
+
+</CodeGroup>
+
+## Disposing Observable Executions
+
+Subscribing returns a `Subscription` object that can be used to cancel the execution:
+
+```typescript
+import { interval } from 'rxjs';
+
+const subscription = interval(1000).subscribe(x => console.log(x));
+
+// Later: stop the execution
+subscription.unsubscribe();
+```
+
+### Cleanup Function
+
+When creating an Observable, return a cleanup function to release resources:
+
+```typescript
+import { Observable } from 'rxjs';
+
+const observable = new Observable((subscriber) => {
+  const intervalId = setInterval(() => {
+    subscriber.next('hi');
+  }, 1000);
+
+  // Cleanup function
+  return () => {
+    clearInterval(intervalId);
+  };
+});
+
+const subscription = observable.subscribe(x => console.log(x));
+
+// Calling unsubscribe() will execute the cleanup function
+subscription.unsubscribe();
+```
+
+## Observables vs Functions
+
+Observables are like functions with superpowers:
+
+<Tabs>
+  <Tab title="Function">
+    ```typescript
+    function foo() {
+      console.log('Hello');
+      return 42;
+      // Cannot return another value
+    }
+
+    const x = foo(); // 42
+    const y = foo(); // 42
+    ```
+  </Tab>
+  <Tab title="Observable">
+    ```typescript
+    import { Observable } from 'rxjs';
+
+    const foo = new Observable((subscriber) => {
+      console.log('Hello');
+      subscriber.next(42);
+      subscriber.next(100); // Can "return" multiple values
+      subscriber.next(200);
+    });
+
+    foo.subscribe(x => console.log(x)); // 42, 100, 200
+    foo.subscribe(y => console.log(y)); // 42, 100, 200
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Both functions and Observables are **lazy** - they don't execute until called/subscribed.
+</Note>
+
+## Observables vs Promises
+
+| Feature | Promise | Observable |
+|---------|---------|------------|
+| **Values** | Single value | Multiple values |
+| **Lazy** | No (eager) | Yes (lazy) |
+| **Cancellable** | No | Yes (via unsubscribe) |
+| **Operators** | Limited (then, catch) | Extensive library |
+| **Multicast** | Yes | No (unless using Subject) |
+
+## Common Patterns
+
+### Error Handling
+
+```typescript
+import { Observable } from 'rxjs';
+
+const observable = new Observable((subscriber) => {
+  try {
+    subscriber.next(1);
+    subscriber.next(2);
+    // Risky operation
+    throw new Error('Something went wrong');
+  } catch (err) {
+    subscriber.error(err);
+  }
+});
+
+observable.subscribe({
+  next: x => console.log(x),
+  error: err => console.error('Error:', err.message)
+});
+```
+
+### Finite Streams
+
+```typescript
+import { Observable } from 'rxjs';
+
+const finite$ = new Observable<number>((subscriber) => {
+  subscriber.next(1);
+  subscriber.next(2);
+  subscriber.next(3);
+  subscriber.complete(); // Signal completion
+});
+```
+
+### Infinite Streams
+
+```typescript
+import { interval } from 'rxjs';
+
+const infinite$ = interval(1000); // Never completes
+// Must unsubscribe to stop
+```
+
+## Best Practices
+
+<Note>
+  **Naming Convention**: Suffix Observable variable names with `$` (e.g., `data$`, `clicks$`) to distinguish them from regular values.
+</Note>
+
+1. **Always handle errors** - Unhandled errors can crash your application
+2. **Unsubscribe when done** - Prevent memory leaks in long-lived components
+3. **Use creation operators** - Prefer `of`, `from`, etc. over `new Observable`
+4. **Keep subscribe logic minimal** - Use operators for transformations
+5. **Return cleanup functions** - Always clean up resources like timers and event listeners
+
+## When to Use Observables
+
+**Use Observables when you need:**
+- Multiple values over time
+- Cancellation support
+- Lazy execution
+- Powerful composition via operators
+- Complex async coordination
+
+**Examples:**
+- User input events
+- WebSocket messages
+- HTTP polling
+- Real-time data streams
+- Animation sequences
+
+## Related Concepts
+
+- [Observer](/concepts/observer) - Consumes values from Observables
+- [Subscription](/concepts/subscription) - Manages Observable execution lifecycle
+- [Operators](/concepts/operators) - Transform and compose Observables
+- [Subject](/concepts/subject) - Special Observable that multicasts to multiple Observers

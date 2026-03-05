@@ -1,0 +1,56 @@
+---
+title: takeWhile
+description: Emits values while a predicate is true, then completes
+---
+
+## Overview
+
+Emits values emitted by the source Observable so long as each value satisfies the given `predicate`, and then completes as soon as this `predicate` is not satisfied.
+
+<Note>
+`takeWhile` subscribes and begins mirroring the source Observable. Each value emitted on the source is given to the `predicate` function. The output Observable emits the source values until the `predicate` returns false.
+</Note>
+
+## Type Signature
+
+```typescript
+function takeWhile<T>(
+  predicate: (value: T, index: number) => boolean,
+  inclusive: boolean = false
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="predicate" type="(value: T, index: number) => boolean" required>
+  A function that evaluates a value emitted by the source Observable and returns a boolean.
+</ParamField>
+
+<ParamField path="inclusive" type="boolean" default="false">
+  When set to `true` the value that caused `predicate` to return `false` will also be emitted.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits values from the source Observable so long as each value satisfies the condition defined by the `predicate`.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { fromEvent, takeWhile } from 'rxjs';
+
+const clicks = fromEvent<PointerEvent>(document, 'click');
+const result = clicks.pipe(takeWhile(ev => ev.clientX > 200));
+
+result.subscribe(x => console.log(x));
+// Emits clicks while X > 200
+```
+
+## Related Operators
+
+- **[take](/api/operators/take)** - Takes first N values
+- **[takeLast](/api/operators/takeLast)** - Takes last N values
+- **[takeUntil](/api/operators/takeUntil)** - Takes until another Observable emits
+- **[skipWhile](/api/operators/skipWhile)** - Skips while condition is true

@@ -1,0 +1,173 @@
+---
+title: bufferCount
+description: Buffers source values until the buffer reaches a specified size
+---
+
+## Overview
+
+Collects values from the source Observable into arrays of a specified maximum size. When the buffer reaches the `bufferSize`, it emits the array and starts a new buffer. Optionally, you can control when new buffers start using the `startBufferEvery` parameter.
+
+<Tip>
+  Use `bufferCount` when you need to process items in fixed-size batches, like pagination or bulk operations.
+</Tip>
+
+## Type Signature
+
+```typescript
+function bufferCount<T>(
+  bufferSize: number, 
+  startBufferEvery: number | null = null
+): OperatorFunction<T, T[]>
+```
+
+## Parameters
+
+<ParamField path="bufferSize" type="number" required>
+  The maximum number of values to buffer before emitting. Once the buffer contains this many values, it is emitted and cleared.
+</ParamField>
+
+<ParamField path="startBufferEvery" type="number | null" default="null">
+  The interval at which to start new buffers. If not provided or `null`, a new buffer starts immediately after the previous one emits. If set to a value less than `bufferSize`, buffers will overlap. If greater, some values will be skipped between buffers.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, T[]>">
+  A function that returns an Observable of arrays, where each array contains at most `bufferSize` values from the source.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Buffer Every N Items
+
+<CodeGroup>
+```typescript Simple Buffering
+import { fromEvent, bufferCount } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const buffered = clicks.pipe(bufferCount(2));
+
+buffered.subscribe(x => console.log(x));
+// After 2 clicks: [MouseEvent, MouseEvent]
+// After 2 more clicks: [MouseEvent, MouseEvent]
+```
+
+```typescript With Numbers
+import { range, bufferCount } from 'rxjs';
+
+const numbers = range(1, 10);
+const buffered = numbers.pipe(bufferCount(3));
+
+buffered.subscribe(x => console.log(x));
+// Output:
+// [1, 2, 3]
+// [4, 5, 6]
+// [7, 8, 9]
+// [10]
+```
+</CodeGroup>
+
+### Overlapping Buffers with startBufferEvery
+
+```typescript
+import { fromEvent, bufferCount } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+// Start a new buffer every 1 click, but emit when buffer has 2 items
+const buffered = clicks.pipe(bufferCount(2, 1));
+
+buffered.subscribe(x => console.log(x));
+// After click 1: (nothing emitted yet)
+// After click 2: [click1, click2]
+// After click 3: [click2, click3]
+// After click 4: [click3, click4]
+```
+
+### Skipping Values Between Buffers
+
+```typescript
+import { range, bufferCount } from 'rxjs';
+
+const numbers = range(1, 10);
+// Buffer size 2, start new buffer every 3 values
+const buffered = numbers.pipe(bufferCount(2, 3));
+
+buffered.subscribe(x => console.log(x));
+// Output:
+// [1, 2]    - buffer started at 1
+// [4, 5]    - buffer started at 4 (skipped 3)
+// [7, 8]    - buffer started at 7 (skipped 6)
+// [10]      - final incomplete buffer
+```
+
+## Marble Diagram
+
+### bufferCount(3)
+
+```
+Source: --1--2--3--4--5--6--7--8--9--|
+Result: --------[1,2,3]-----[4,5,6]-----[7,8,9]--|
+```
+
+### bufferCount(2, 1) - Overlapping
+
+```
+Source: --1--2--3--4--5--|
+Result: -----[1,2]--[2,3]--[3,4]--[4,5]--|
+```
+
+### bufferCount(2, 3) - Skipping
+
+```
+Source: --1--2--3--4--5--6--7--|
+Result: -----[1,2]--------[4,5]--------[7]--|
+```
+
+## Common Use Cases
+
+1. **Batch Processing**: Process items in fixed-size batches (e.g., bulk database inserts)
+2. **Pagination**: Create pages of results from a stream of items
+3. **Sliding Windows**: Use overlapping buffers to analyze trends
+4. **Rate Limiting**: Process items in groups to avoid overwhelming downstream systems
+5. **Pair-wise Operations**: Use `bufferCount(2, 1)` to compare consecutive values
+
+<Note>
+  When the source completes, any incomplete buffer (containing fewer than `bufferSize` items) is still emitted.
+</Note>
+
+## Advanced Example: Batch API Requests
+
+```typescript
+import { from, bufferCount, mergeMap, delay } from 'rxjs';
+
+interface User {
+  id: number;
+  name: string;
+}
+
+const userIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+// Process users in batches of 3
+from(userIds).pipe(
+  bufferCount(3),
+  mergeMap(batch => {
+    console.log('Processing batch:', batch);
+    return fetch('/api/users/batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids: batch })
+    }).then(res => res.json());
+  })
+).subscribe(
+  users => console.log('Batch result:', users),
+  err => console.error('Error:', err)
+);
+```
+
+## Related Operators
+
+- **[buffer](/api/operators/buffer)** - Buffer based on a notifier Observable
+- **[bufferTime](/api/operators/buffertime)** - Buffer based on time intervals
+- **[bufferToggle](/api/operators/buffertoggle)** - Buffer with opening and closing signals
+- **[bufferWhen](/api/operators/bufferwhen)** - Buffer using a factory function
+- **[windowCount](/api/operators/windowcount)** - Like bufferCount, but emits Observables instead of arrays
+- **[pairwise](/api/operators/pairwise)** - A specialized form of `bufferCount(2, 1)`

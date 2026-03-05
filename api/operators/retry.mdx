@@ -1,0 +1,495 @@
+---
+title: retry
+description: Returns an Observable that mirrors the source, resubscribing on error up to a specified count.
+---
+
+## Overview
+
+`retry` automatically resubscribes to the source Observable when it errors, up to a maximum number of retry attempts. It's useful for handling transient failures like network errors. All emissions from failed attempts are passed through to subscribers.
+
+<Tip>
+  Perfect for handling temporary network issues or service disruptions. Use with a delay to implement exponential backoff for more resilient retry logic.
+</Tip>
+
+## Type Signature
+
+```typescript
+export function retry<T>(count?: number): MonoTypeOperatorFunction<T>;
+export function retry<T>(config: RetryConfig): MonoTypeOperatorFunction<T>;
+```
+
+## Parameters
+
+<ParamField path="count" type="number" default="Infinity">
+  The maximum number of retry attempts. If omitted or set to `Infinity`, retries indefinitely until successful.
+</ParamField>
+
+<ParamField path="config" type="RetryConfig">
+  Configuration object for advanced retry behavior:
+  
+  ```typescript
+  interface RetryConfig {
+    count?: number;
+    delay?: number | ((error: any, retryCount: number) => ObservableInput<any>);
+    resetOnSuccess?: boolean;
+  }
+  ```
+  
+  - `count`: Maximum retry attempts
+  - `delay`: Milliseconds to wait between retries, or a function returning a notifier Observable
+  - `resetOnSuccess`: If true, resets retry counter when a value is successfully emitted
+</ParamField>
+
+## Returns
+
+`MonoTypeOperatorFunction<T>` - An operator function that returns an Observable that resubscribes to the source on error, up to the specified count.
+
+## Usage Examples
+
+### Basic Example: Simple Retry
+
+<CodeGroup>
+```typescript Basic Retry
+import { interval, mergeMap, throwError, of, retry } from 'rxjs';
+
+const source = interval(1000);
+const result = source.pipe(
+  mergeMap(val => val > 5 ? throwError(() => 'Error!') : of(val)),
+  retry(2) // retry 2 times on error
+);
+
+result.subscribe({
+  next: value => console.log(value),
+  error: err => console.log(`${err}: Retried 2 times then quit!`)
+});
+
+// Output:
+// 0..1..2..3..4..5..
+// 0..1..2..3..4..5..
+// 0..1..2..3..4..5..
+// 'Error!: Retried 2 times then quit!'
+```
+
+```typescript With Delay
+import { ajax } from 'rxjs/ajax';
+import { retry } from 'rxjs';
+
+ajax.getJSON('/api/data').pipe(
+  retry({
+    count: 3,
+    delay: 1000 // Wait 1 second between retries
+  })
+).subscribe({
+  next: data => console.log('Data:', data),
+  error: err => console.error('Failed after 3 retries:', err)
+});
+```
+</CodeGroup>
+
+### Real-World Example: API Request with Exponential Backoff
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retry, timer } from 'rxjs';
+
+interface ApiResponse {
+  data: any;
+  timestamp: number;
+}
+
+function fetchWithExponentialBackoff(url: string): Observable<ApiResponse> {
+  return ajax.getJSON(url).pipe(
+    map(data => ({
+      data,
+      timestamp: Date.now()
+    })),
+    retry({
+      count: 5,
+      delay: (error, retryCount) => {
+        const delayMs = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
+        console.log(`Retry attempt ${retryCount} after ${delayMs}ms`);
+        return timer(delayMs);
+      }
+    })
+  );
+}
+
+fetchWithExponentialBackoff('/api/users').subscribe({
+  next: response => {
+    console.log('Success:', response);
+    displayData(response.data);
+  },
+  error: err => {
+    console.error('Failed after all retries:', err);
+    showErrorMessage('Unable to load data');
+  }
+});
+
+// Retry delays:
+// Attempt 1: 1000ms (1s)
+// Attempt 2: 2000ms (2s)
+// Attempt 3: 4000ms (4s)
+// Attempt 4: 8000ms (8s)
+// Attempt 5: 16000ms (16s)
+```
+
+### WebSocket with Auto-Reconnect
+
+```typescript
+import { webSocket } from 'rxjs/webSocket';
+import { retry, tap, delay } from 'rxjs';
+
+interface WebSocketMessage {
+  type: string;
+  data: any;
+  timestamp: number;
+}
+
+function connectWithRetry(url: string): Observable<WebSocketMessage> {
+  return webSocket<WebSocketMessage>(url).pipe(
+    tap({
+      next: msg => console.log('Received:', msg),
+      error: err => console.warn('WebSocket error:', err)
+    }),
+    retry({
+      delay: (error, retryCount) => {
+        console.log(`Reconnecting... (attempt ${retryCount})`);
+        return timer(2000); // Wait 2s before each reconnect
+      }
+    })
+  );
+}
+
+connectWithRetry('ws://localhost:8080/live').subscribe({
+  next: message => handleMessage(message),
+  error: err => console.error('Connection failed permanently:', err)
+});
+```
+
+### File Upload with Retry Logic
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retry, tap, catchError, throwError } from 'rxjs';
+
+interface UploadResult {
+  success: boolean;
+  url?: string;
+  error?: string;
+}
+
+function uploadFileWithRetry(file: File): Observable<UploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let attemptCount = 0;
+
+  return ajax({
+    url: '/api/upload',
+    method: 'POST',
+    body: formData
+  }).pipe(
+    map(response => ({
+      success: true,
+      url: response.response.url
+    })),
+    tap({
+      error: err => {
+        attemptCount++;
+        console.log(`Upload attempt ${attemptCount} failed:`, err.message);
+      }
+    }),
+    retry({
+      count: 3,
+      delay: (error, retryCount) => {
+        // Don't retry on client errors (4xx)
+        if (error.status >= 400 && error.status < 500) {
+          console.error('Client error, not retrying:', error.status);
+          return throwError(() => error);
+        }
+        
+        // Retry on server errors (5xx) or network errors
+        const delayMs = retryCount * 1000;
+        console.log(`Retrying upload in ${delayMs}ms...`);
+        return timer(delayMs);
+      }
+    }),
+    catchError(err => of({
+      success: false,
+      error: err.message
+    }))
+  );
+}
+
+const fileInput = document.getElementById('file') as HTMLInputElement;
+const file = fileInput.files![0];
+
+uploadFileWithRetry(file).subscribe((result: UploadResult) => {
+  if (result.success) {
+    console.log('Upload successful:', result.url);
+    showSuccessMessage('File uploaded successfully');
+  } else {
+    console.error('Upload failed:', result.error);
+    showErrorMessage(`Upload failed: ${result.error}`);
+  }
+});
+```
+
+## Practical Scenarios
+
+<Note>
+  Use `resetOnSuccess` when dealing with long-running Observables where you want to retry transient errors but not count successful emissions against the retry limit.
+</Note>
+
+### Scenario 1: Database Query with Retry on Deadlock
+
+```typescript
+import { retry, timer } from 'rxjs';
+
+function executeQuery(sql: string): Observable<any> {
+  return ajax.post('/api/db/query', { sql }).pipe(
+    retry({
+      count: 5,
+      delay: (error, retryCount) => {
+        // Check if error is a deadlock
+        if (error.status === 409 || error.response?.code === 'DEADLOCK') {
+          // Random delay between 100-500ms to avoid repeated deadlocks
+          const randomDelay = Math.random() * 400 + 100;
+          console.log(`Deadlock detected, retrying in ${randomDelay.toFixed(0)}ms`);
+          return timer(randomDelay);
+        }
+        
+        // For other errors, don't retry
+        return throwError(() => error);
+      }
+    })
+  );
+}
+
+executeQuery('SELECT * FROM users WHERE id = 123').subscribe({
+  next: result => console.log('Query result:', result),
+  error: err => console.error('Query failed:', err)
+});
+```
+
+### Scenario 2: Streaming Data with Resilience
+
+```typescript
+import { interval, switchMap, retry } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface SensorData {
+  temperature: number;
+  humidity: number;
+  timestamp: number;
+}
+
+function monitorSensor(sensorId: string): Observable<SensorData> {
+  return interval(5000).pipe(
+    switchMap(() => 
+      ajax.getJSON<SensorData>(`/api/sensors/${sensorId}/data`)
+    ),
+    retry({
+      delay: (error, retryCount) => {
+        console.warn(`Sensor read failed (attempt ${retryCount}), retrying...`);
+        return timer(2000);
+      },
+      resetOnSuccess: true // Reset counter on each successful read
+    })
+  );
+}
+
+monitorSensor('sensor-001').subscribe({
+  next: data => {
+    console.log('Sensor data:', data);
+    updateDashboard(data);
+  },
+  error: err => {
+    console.error('Sensor monitoring failed:', err);
+    showSensorError('sensor-001');
+  }
+});
+```
+
+### Scenario 3: Authentication Token Refresh
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retry, switchMap, catchError, throwError } from 'rxjs';
+
+interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+let tokens: AuthTokens | null = null;
+
+function refreshAuthToken(): Observable<AuthTokens> {
+  if (!tokens?.refreshToken) {
+    return throwError(() => new Error('No refresh token available'));
+  }
+
+  return ajax.post<AuthTokens>('/api/auth/refresh', {
+    refreshToken: tokens.refreshToken
+  }).pipe(
+    map(response => response.response),
+    tap(newTokens => {
+      tokens = newTokens;
+      localStorage.setItem('tokens', JSON.stringify(newTokens));
+    }),
+    retry({
+      count: 2,
+      delay: 1000
+    }),
+    catchError(err => {
+      // If refresh fails, redirect to login
+      console.error('Token refresh failed:', err);
+      redirectToLogin();
+      return throwError(() => new Error('Authentication failed'));
+    })
+  );
+}
+
+function authenticatedRequest(url: string): Observable<any> {
+  return ajax.getJSON(url, {
+    Authorization: `Bearer ${tokens?.accessToken}`
+  }).pipe(
+    catchError(err => {
+      // If 401, try refreshing token and retry
+      if (err.status === 401) {
+        console.log('Access token expired, refreshing...');
+        return refreshAuthToken().pipe(
+          switchMap(() => authenticatedRequest(url))
+        );
+      }
+      return throwError(() => err);
+    })
+  );
+}
+
+authenticatedRequest('/api/user/profile').subscribe({
+  next: profile => displayProfile(profile),
+  error: err => showError(err.message)
+});
+```
+
+### Scenario 4: Batch Processing with Per-Item Retry
+
+```typescript
+import { from, mergeMap, retry, catchError, of } from 'rxjs';
+
+interface ProcessingResult {
+  id: string;
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
+function processItem(id: string): Observable<ProcessingResult> {
+  return ajax.post(`/api/process/${id}`, {}).pipe(
+    map(response => ({
+      id,
+      success: true,
+      data: response.response
+    })),
+    retry({
+      count: 2,
+      delay: 500
+    }),
+    catchError(err => of({
+      id,
+      success: false,
+      error: err.message
+    }))
+  );
+}
+
+function processBatch(itemIds: string[]): Observable<ProcessingResult[]> {
+  return from(itemIds).pipe(
+    mergeMap(
+      id => processItem(id),
+      5 // Process 5 items concurrently
+    ),
+    scan((results, result) => [...results, result], [] as ProcessingResult[])
+  );
+}
+
+processBatch(['item1', 'item2', 'item3', 'item4', 'item5']).subscribe({
+  next: results => {
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+    console.log(`Processed: ${successful} successful, ${failed} failed`);
+  },
+  complete: () => console.log('Batch processing complete')
+});
+```
+
+## Behavior Details
+
+### Retry Behavior
+
+- Resubscribes to the source Observable on error
+- All emissions from failed attempts are passed through
+- After max retries, the error is propagated
+- Successful completion stops retry logic
+
+<Warning>
+  Without a count limit, `retry()` will retry infinitely. Always set a reasonable retry limit for production code.
+</Warning>
+
+```typescript
+import { throwError, retry, tap } from 'rxjs';
+
+let attempts = 0;
+
+throwError(() => new Error('Always fails')).pipe(
+  tap(() => console.log(`Attempt ${++attempts}`)),
+  retry(3)
+).subscribe({
+  error: err => console.log(`Failed after ${attempts} total attempts`)
+});
+
+// Output:
+// Attempt 1
+// Attempt 2
+// Attempt 3
+// Attempt 4
+// Failed after 4 total attempts
+```
+
+### Reset On Success
+
+```typescript
+import { interval, map, retry } from 'rxjs';
+
+let errorCount = 0;
+
+interval(1000).pipe(
+  map(x => {
+    // Fail every 5th emission
+    if (x % 5 === 0 && x !== 0) {
+      errorCount++;
+      throw new Error(`Error at ${x}`);
+    }
+    return x;
+  }),
+  retry({
+    count: 3,
+    resetOnSuccess: true // Reset counter after each successful emission
+  })
+).subscribe({
+  next: x => console.log('Value:', x),
+  error: err => console.log('Failed:', err.message)
+});
+
+// With resetOnSuccess: true, can handle multiple error cycles
+// Without it, would fail after 3 total errors
+```
+
+## Related Operators
+
+- [`retryWhen`](/api/operators/retryWhen) - Retry with custom observable logic (deprecated)
+- [`catchError`](/api/operators/catchError) - Handle errors with custom logic
+- [`throwError`](/api/operators/throwError) - Create an error Observable
+- [`repeat`](/api/operators/repeat) - Resubscribe on successful completion

@@ -1,0 +1,357 @@
+---
+title: 'timeout'
+description: 'Error or switch to a different Observable if the source does not emit within specified time'
+---
+
+## Overview
+
+The `timeout` operator errors (or switches to a fallback Observable) if the source Observable does not emit values within specified time constraints. It's useful for implementing timeout behavior in long-running operations.
+
+<Note>
+  By default, `timeout` throws a `TimeoutError`. Provide a `with` function to switch to a fallback Observable instead.
+</Note>
+
+## Signature
+
+```typescript
+// With fallback Observable
+function timeout<T, O extends ObservableInput<unknown>, M = unknown>(
+  config: TimeoutConfig<T, O, M> & { with: (info: TimeoutInfo<T, M>) => O }
+): OperatorFunction<T, T | ObservedValueOf<O>>
+
+// Error on timeout
+function timeout<T, M = unknown>(
+  config: Omit<TimeoutConfig<T, any, M>, 'with'>
+): OperatorFunction<T, T>
+
+// Simple overloads
+function timeout<T>(first: Date, scheduler?: SchedulerLike): MonoTypeOperatorFunction<T>
+function timeout<T>(each: number, scheduler?: SchedulerLike): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="config" type="TimeoutConfig<T, O, M> | number | Date">
+  Configuration object or simple number/Date:
+  
+  **Object configuration:**
+  - `first`: Time allowed for first value (number in ms or Date)
+  - `each`: Time allowed between subsequent values (number in ms)
+  - `with`: Factory function returning fallback Observable
+  - `scheduler`: Scheduler to use (default: asyncScheduler)
+  - `meta`: Optional metadata passed to error/with function
+  
+  **Simple configurations:**
+  - `number`: Time allowed between each value (including first)
+  - `Date`: Time by which first value must arrive
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, T | ObservedValueOf<O>>">
+  An Observable that mirrors the source, but errors with `TimeoutError` (or switches to fallback) if timeout conditions are met.
+</ParamField>
+
+## TimeoutConfig Interface
+
+```typescript
+interface TimeoutConfig<T, O extends ObservableInput<unknown>, M> {
+  each?: number;
+  first?: number | Date;
+  scheduler?: SchedulerLike;
+  with?: (info: TimeoutInfo<T, M>) => O;
+  meta?: M;
+}
+
+interface TimeoutInfo<T, M = unknown> {
+  readonly meta: M;
+  readonly seen: number;
+  readonly lastValue: T | null;
+}
+```
+
+## Usage Examples
+
+### Simple Timeout
+
+Error if source waits too long between values:
+
+<CodeGroup>
+```typescript Each value timeout
+import { interval, timeout } from 'rxjs';
+
+// Random interval between 0-10 seconds
+const source$ = interval(Math.round(Math.random() * 10000));
+
+source$.pipe(
+  timeout(5000) // Timeout after 5 seconds
+).subscribe({
+  next: console.log,
+  error: err => console.error('Timeout!', err)
+});
+```
+
+```typescript First value timeout
+import { interval, timeout } from 'rxjs';
+
+const source$ = interval(Math.round(Math.random() * 10000));
+
+source$.pipe(
+  timeout({ first: 5000 })
+).subscribe({
+  next: console.log,
+  error: console.error
+});
+// Only first value must arrive within 5s
+```
+</CodeGroup>
+
+### Switch to Fallback
+
+Switch to a different Observable on timeout:
+
+```typescript
+import { interval, timeout, of } from 'rxjs';
+
+const slow$ = interval(900);
+const fast$ = interval(500);
+
+slow$.pipe(
+  timeout({
+    each: 1000,
+    with: () => fast$
+  })
+).subscribe(console.log);
+
+// If slow$ doesn't emit within 1s, switch to fast$
+```
+
+### Custom Timeout Error
+
+Throw a custom error on timeout:
+
+```typescript
+import { interval, timeout, throwError } from 'rxjs';
+
+class CustomTimeoutError extends Error {
+  constructor() {
+    super('It was too slow');
+    this.name = 'CustomTimeoutError';
+  }
+}
+
+const slow$ = interval(900);
+
+slow$.pipe(
+  timeout({
+    each: 1000,
+    with: () => throwError(() => new CustomTimeoutError())
+  })
+).subscribe({
+  error: console.error
+});
+```
+
+### Different Timeouts for First vs Each
+
+Strict timeout for first value, lenient for rest:
+
+```typescript
+import { timer, timeout, expand } from 'rxjs';
+
+const getRandomTime = () => Math.round(Math.random() * 10000);
+
+const source$ = timer(getRandomTime())
+  .pipe(expand(() => timer(getRandomTime())));
+
+source$.pipe(
+  timeout({ 
+    first: 7000,  // First value within 7s
+    each: 5000    // Subsequent values within 5s
+  })
+).subscribe({
+  next: console.log,
+  error: console.error
+});
+```
+
+### Timeout with Metadata
+
+Pass context information to error handler:
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { timeout, catchError, of } from 'rxjs';
+
+interface RequestMeta {
+  url: string;
+  timestamp: number;
+}
+
+ajax.getJSON('/api/slow-endpoint').pipe(
+  timeout({
+    first: 5000,
+    meta: { 
+      url: '/api/slow-endpoint',
+      timestamp: Date.now()
+    } as RequestMeta
+  }),
+  catchError((error: TimeoutError<any, RequestMeta>) => {
+    if (error instanceof TimeoutError) {
+      console.log('Request timed out:', error.info?.meta?.url);
+      console.log('Values seen:', error.info?.seen);
+      console.log('Last value:', error.info?.lastValue);
+    }
+    return of({ error: 'Timeout' });
+  })
+).subscribe();
+```
+
+### HTTP Request Timeout
+
+Timeout for API calls with fallback:
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { timeout, retry, catchError, of } from 'rxjs';
+
+function fetchWithTimeout<T>(url: string, timeoutMs: number = 5000) {
+  return ajax.getJSON<T>(url).pipe(
+    timeout(timeoutMs),
+    retry(2),
+    catchError(error => {
+      console.error('Failed after retries:', error);
+      return of(null);
+    })
+  );
+}
+
+fetchWithTimeout<User[]>('/api/users', 3000).subscribe(users => {
+  if (users) {
+    console.log('Users:', users);
+  } else {
+    console.log('Failed to load users');
+  }
+});
+```
+
+## TimeoutError Class
+
+```typescript
+class TimeoutError<T, M> extends Error {
+  constructor(public info: TimeoutInfo<T, M> | null = null) {
+    super('Timeout has occurred');
+    this.name = 'TimeoutError';
+  }
+}
+```
+
+The error contains information about the timeout:
+- `info.meta`: Custom metadata you provided
+- `info.seen`: Number of values emitted before timeout
+- `info.lastValue`: The last value emitted (or null)
+
+## How Timeout Works
+
+<Tip>
+  `first` controls timeout for the first value only. `each` controls timeout between all subsequent values. If only `each` is provided, it applies to all values including the first.
+</Tip>
+
+**With `each` only:**
+```typescript
+timeout({ each: 1000 })
+// First value must arrive within 1s
+// Second value must arrive within 1s of first
+// Third value must arrive within 1s of second, etc.
+```
+
+**With `first` only:**
+```typescript
+timeout({ first: 5000 })
+// First value must arrive within 5s
+// No timeout for subsequent values
+```
+
+**With both:**
+```typescript
+timeout({ first: 7000, each: 5000 })
+// First value must arrive within 7s
+// Subsequent values within 5s of previous
+```
+
+## Date-Based Timeout
+
+```typescript
+import { interval, timeout } from 'rxjs';
+
+const futureDate = new Date(Date.now() + 5000);
+
+interval(1000).pipe(
+  timeout(futureDate)
+).subscribe({
+  next: console.log,
+  error: err => console.log('Timed out at:', futureDate)
+});
+
+// Errors if first value doesn't arrive before futureDate
+```
+
+## Common Use Cases
+
+1. **API Request Timeouts**: Cancel slow network requests
+2. **User Interaction Timeouts**: Timeout waiting for user input
+3. **WebSocket Heartbeats**: Detect connection loss
+4. **Polling Timeouts**: Ensure regular data updates
+5. **Loading States**: Show errors after timeout period
+
+## Error Handling Best Practices
+
+<Warning>
+  Always handle `TimeoutError` explicitly. Check `error instanceof TimeoutError` to distinguish from other errors.
+</Warning>
+
+```typescript
+import { timeout, catchError, throwError } from 'rxjs';
+
+source$.pipe(
+  timeout(5000),
+  catchError(error => {
+    if (error instanceof TimeoutError) {
+      console.log('Operation timed out');
+      return of(defaultValue);
+    }
+    // Re-throw other errors
+    return throwError(() => error);
+  })
+).subscribe();
+```
+
+## Performance Considerations
+
+- Each timeout creates a scheduled task (timer)
+- Timers are cleaned up when values arrive or on unsubscribe
+- For many concurrent timeouts, consider the scheduler overhead
+- Use appropriate scheduler (default is `asyncScheduler`)
+
+## Comparison with Other Operators
+
+| Operator | Purpose | Errors | Switches |
+|----------|---------|--------|----------|
+| `timeout` | Enforce time limits | ✅ | ✅ (with `with`) |
+| `debounceTime` | Wait for silence | ❌ | ❌ |
+| `throttleTime` | Limit rate | ❌ | ❌ |
+| `delay` | Shift timing | ❌ | ❌ |
+
+## Related Operators
+
+- [timeoutWith](/api/operators/timeoutWith) - Deprecated, use `timeout` with `with`
+- [retry](/api/operators/retry) - Retry on error
+- [catchError](/api/operators/catchError) - Handle errors
+- [delay](/api/operators/delay) - Delay emissions
+- [debounceTime](/api/operators/debounceTime) - Wait for pause
+
+## See Also
+
+- [RxJS timeout documentation](https://rxjs.dev/api/operators/timeout)
+- [Error Handling Guide](/guides/error-handling)
+- [Schedulers Guide](/guides/schedulers)

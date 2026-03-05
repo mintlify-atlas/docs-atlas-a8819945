@@ -1,0 +1,264 @@
+---
+title: 'delayWhen'
+description: 'Delay emissions based on another Observable'
+---
+
+## Overview
+
+The `delayWhen` operator delays each emission from the source Observable by a time span determined by another Observable. Unlike `delay`, which uses a fixed duration, `delayWhen` allows you to dynamically compute the delay for each value.
+
+<Note>
+  The source value is emitted only when the "duration" Observable emits a **next** value. Completion alone does not trigger emission.
+</Note>
+
+## Signature
+
+```typescript
+function delayWhen<T>(
+  delayDurationSelector: (value: T, index: number) => ObservableInput<any>
+): MonoTypeOperatorFunction<T>
+
+// Deprecated signature
+function delayWhen<T>(
+  delayDurationSelector: (value: T, index: number) => ObservableInput<any>,
+  subscriptionDelay: Observable<any>
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="delayDurationSelector" type="(value: T, index: number) => ObservableInput<any>" required>
+  A function that returns an Observable (the "duration" Observable) for each value emitted by the source. The emission of that value is delayed until the duration Observable emits a next value.
+  
+  **Parameters:**
+  - `value`: The emitted value from source
+  - `index`: Zero-based emission index
+  
+  **Returns:** An ObservableInput that controls when the value is emitted
+</ParamField>
+
+<ParamField path="subscriptionDelay" type="Observable<any>" deprecated>
+  **Deprecated in v8.** An Observable that triggers subscription to the source once it emits any value.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="MonoTypeOperatorFunction<T>">
+  A function that returns an Observable that delays emissions based on the ObservableInput returned by `delayDurationSelector`.
+</ParamField>
+
+## Usage Examples
+
+### Random Delay
+
+Delay each click by a random amount of time:
+
+<CodeGroup>
+```typescript Random delays
+import { fromEvent, delayWhen, interval } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const delayedClicks = clicks.pipe(
+  delayWhen(() => interval(Math.random() * 5000))
+);
+
+delayedClicks.subscribe(x => console.log(x));
+// Each click delayed by 0-5 seconds randomly
+```
+
+```typescript Increasing delays
+import { of, delayWhen, timer } from 'rxjs';
+
+of(1, 2, 3, 4, 5).pipe(
+  delayWhen((value, index) => timer(index * 1000))
+).subscribe(console.log);
+
+// Output:
+// 1 (immediately)
+// 2 (after 1s)
+// 3 (after 2s)
+// 4 (after 3s)
+// 5 (after 4s)
+```
+</CodeGroup>
+
+### Value-Based Delay
+
+Delay based on the emitted value:
+
+```typescript
+import { of, delayWhen, timer } from 'rxjs';
+
+interface Task {
+  id: number;
+  priority: 'high' | 'medium' | 'low';
+}
+
+const tasks: Task[] = [
+  { id: 1, priority: 'low' },
+  { id: 2, priority: 'high' },
+  { id: 3, priority: 'medium' }
+];
+
+const priorityDelays = {
+  high: 0,
+  medium: 1000,
+  low: 3000
+};
+
+from(tasks).pipe(
+  delayWhen(task => timer(priorityDelays[task.priority]))
+).subscribe(task => {
+  console.log(`Processing task ${task.id} (${task.priority})`);
+});
+
+// Output:
+// Processing task 2 (high)      - immediate
+// Processing task 3 (medium)    - after 1s
+// Processing task 1 (low)       - after 3s
+```
+
+### Network Request Delay
+
+Delay based on API response:
+
+```typescript
+import { fromEvent, delayWhen, ajax } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const clicks$ = fromEvent(button, 'click');
+
+clicks$.pipe(
+  delayWhen(() => 
+    ajax.getJSON('/api/rate-limit').pipe(
+      map(response => response.retryAfter)
+    )
+  )
+).subscribe(() => {
+  console.log('Action performed after checking rate limit');
+});
+```
+
+### Conditional Delays
+
+Apply different delays based on conditions:
+
+```typescript
+import { interval, delayWhen, timer } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+interval(500).pipe(
+  take(10),
+  delayWhen((value, index) => {
+    // Even numbers: delay 2s, odd numbers: delay 500ms
+    const delay = value % 2 === 0 ? 2000 : 500;
+    return timer(delay);
+  })
+).subscribe(value => {
+  console.log(`${Date.now()}: ${value}`);
+});
+```
+
+## How It Works
+
+<Note>
+  **Important:** In RxJS v7+, the duration Observable must emit a **next** value to trigger the delayed emission. Completion alone is not sufficient.
+</Note>
+
+For each value emitted by the source:
+
+1. `delayDurationSelector` is called with the value and index
+2. The returned Observable becomes the "duration" Observable
+3. RxJS subscribes to the duration Observable
+4. When the duration Observable emits a **next** value:
+   - The source value is emitted to subscribers
+   - The duration Observable is unsubscribed
+5. If the duration Observable only completes (without nexting), the value is never emitted
+6. If the duration Observable errors, the error propagates to output
+
+## Important Behavior Changes
+
+<Warning>
+  **Breaking change in RxJS v7:** Previously, completion of the duration Observable would trigger emission. Now, only **next** notifications trigger emission. Use `timer(delay)` or observables that emit values, not just complete.
+</Warning>
+
+```typescript
+// ❌ This will NOT work (never emits)
+delayWhen(() => EMPTY)  // EMPTY only completes
+
+// ✅ This works correctly
+delayWhen(() => timer(1000))  // timer emits then completes
+```
+
+## Common Use Cases
+
+1. **Variable Rate Limiting**: Different delays based on user role or subscription tier
+2. **Adaptive Throttling**: Delay based on server load or network conditions
+3. **Priority Queues**: Process high-priority items first with shorter delays
+4. **Backoff Strategies**: Implement exponential backoff for retries
+5. **Coordinated Timing**: Synchronize emissions with external events
+
+## Implementation Details
+
+The operator is implemented using `mergeMap`:
+
+```typescript
+export function delayWhen<T>(
+  delayDurationSelector: (value: T, index: number) => ObservableInput<any>
+): MonoTypeOperatorFunction<T> {
+  return mergeMap(
+    (value, index) =>
+      rx(
+        delayDurationSelector(value, index),
+        take(1),  // Only first emission matters
+        map(() => value)  // Return original value
+      ) as Observable<T>
+  );
+}
+```
+
+## Performance Considerations
+
+- Each emitted value creates a new subscription to a duration Observable
+- For high-frequency sources, this can create many concurrent subscriptions
+- Consider using `mergeMap` with concurrency limit if needed
+- Ensure duration Observables complete to avoid memory leaks
+
+## Common Patterns
+
+### Exponential Backoff
+
+```typescript
+import { delayWhen, timer, retry } from 'rxjs';
+
+function exponentialBackoff(maxRetries: number) {
+  return retry({
+    count: maxRetries,
+    delay: (error, retryCount) => timer(Math.pow(2, retryCount) * 1000)
+  });
+}
+```
+
+### Stagger with Index
+
+```typescript
+import { from, delayWhen, timer } from 'rxjs';
+
+from([1, 2, 3, 4, 5]).pipe(
+  delayWhen((_, index) => timer(index * 200))
+).subscribe(console.log);
+// Staggered emissions every 200ms
+```
+
+## Related Operators
+
+- [delay](/api/operators/delay) - Fixed delay for all emissions
+- [debounce](/api/operators/debounce) - Debounce with dynamic duration
+- [throttle](/api/operators/throttle) - Throttle with dynamic duration  
+- [mergeMap](/api/operators/mergeMap) - Map to inner observables
+- [timer](/api/observables/timer) - Create delayed Observable
+
+## See Also
+
+- [RxJS delayWhen documentation](https://rxjs.dev/api/operators/delayWhen)
+- [Time-based Operators Guide](/guides/time-operators)

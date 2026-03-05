@@ -1,0 +1,64 @@
+---
+title: take
+description: Emits only the first N values emitted by the source Observable
+---
+
+## Overview
+
+Emits only the first `count` values emitted by the source Observable.
+
+<Note>
+`take` returns an Observable that emits only the first `count` values emitted by the source Observable. If the source emits fewer than `count` values then all of its values are emitted. After that, it completes, regardless if the source completes.
+</Note>
+
+## Type Signature
+
+```typescript
+function take<T>(count: number): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="count" type="number" required>
+  The maximum number of `next` values to emit.
+  
+  If `count <= 0`, returns an empty Observable that completes immediately.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits only the first `count` values emitted by the source Observable.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { interval, take } from 'rxjs';
+
+const intervalCount = interval(1000);
+const takeFive = intervalCount.pipe(take(5));
+
+takeFive.subscribe(x => console.log(x));
+// Output: 0, 1, 2, 3, 4
+```
+
+### Take First 3 Clicks
+
+```typescript
+import { fromEvent, take } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(take(3));
+
+result.subscribe(x => console.log(x));
+// Logs first 3 clicks then completes
+```
+
+## Related Operators
+
+- **[takeLast](/api/operators/takeLast)** - Takes last N values
+- **[takeUntil](/api/operators/takeUntil)** - Takes until another Observable emits
+- **[takeWhile](/api/operators/takeWhile)** - Takes while condition is true
+- **[first](/api/operators/first)** - Takes first value (with error if empty)
+- **[skip](/api/operators/skip)** - Skips first N values

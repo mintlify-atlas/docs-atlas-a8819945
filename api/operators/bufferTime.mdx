@@ -1,0 +1,205 @@
+---
+title: bufferTime
+description: Buffers source values for a specific time period
+---
+
+## Overview
+
+Collects values from the source Observable into arrays and emits those arrays periodically in time. You can control when buffers open and close using time intervals, and optionally limit buffer size.
+
+<Info>
+  `bufferTime` is perfect for time-based batching scenarios, such as collecting events that occur within a time window.
+</Info>
+
+## Type Signature
+
+```typescript
+function bufferTime<T>(
+  bufferTimeSpan: number,
+  scheduler?: SchedulerLike
+): OperatorFunction<T, T[]>
+
+function bufferTime<T>(
+  bufferTimeSpan: number,
+  bufferCreationInterval: number | null | undefined,
+  scheduler?: SchedulerLike
+): OperatorFunction<T, T[]>
+
+function bufferTime<T>(
+  bufferTimeSpan: number,
+  bufferCreationInterval: number | null | undefined,
+  maxBufferSize: number,
+  scheduler?: SchedulerLike
+): OperatorFunction<T, T[]>
+```
+
+## Parameters
+
+<ParamField path="bufferTimeSpan" type="number" required>
+  The amount of time (in milliseconds) to fill each buffer array. Each buffer will be emitted after this duration.
+</ParamField>
+
+<ParamField path="bufferCreationInterval" type="number | null" default="null">
+  The interval (in milliseconds) at which to start new buffers. If not provided, a new buffer starts immediately after the previous one is emitted. If provided, buffers can overlap or have gaps between them.
+</ParamField>
+
+<ParamField path="maxBufferSize" type="number" default="Infinity">
+  The maximum number of values in a buffer. When reached, the buffer is emitted immediately, even if `bufferTimeSpan` hasn't elapsed.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The scheduler to use for managing the timing of buffer boundaries.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, T[]>">
+  A function that returns an Observable of arrays of buffered values.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Buffer Every Second
+
+<CodeGroup>
+```typescript Simple Time Buffer
+import { fromEvent, bufferTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const buffered = clicks.pipe(bufferTime(1000));
+
+buffered.subscribe(x => console.log(x));
+// Every 1 second: [MouseEvent, MouseEvent, ...]
+// (contains all clicks that occurred in that second)
+```
+
+```typescript With Intervals
+import { interval, bufferTime } from 'rxjs';
+
+const numbers = interval(200);
+const buffered = numbers.pipe(bufferTime(1000));
+
+buffered.subscribe(x => console.log(x));
+// Every second:
+// [0, 1, 2, 3, 4]
+// [5, 6, 7, 8, 9]
+// [10, 11, 12, 13, 14]
+```
+</CodeGroup>
+
+### Overlapping Buffers
+
+```typescript
+import { fromEvent, bufferTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+// Emit clicks from next 2 seconds, starting every 5 seconds
+const buffered = clicks.pipe(bufferTime(2000, 5000));
+
+buffered.subscribe(x => console.log(x));
+// At 0s: start buffer 1 (duration: 0-2s)
+// At 2s: emit buffer 1
+// At 5s: start buffer 2 (duration: 5-7s)
+// At 7s: emit buffer 2
+```
+
+### With Maximum Buffer Size
+
+```typescript
+import { interval, bufferTime } from 'rxjs';
+
+// Emit every 100ms
+const numbers = interval(100);
+// Buffer for 1 second OR until 5 items, whichever comes first
+const buffered = numbers.pipe(bufferTime(1000, null, 5));
+
+buffered.subscribe(x => console.log(x));
+// After 500ms: [0, 1, 2, 3, 4] (max size reached)
+// After 1000ms: [5, 6, 7, 8, 9] (max size reached)
+// Pattern continues...
+```
+
+## Marble Diagram
+
+### bufferTime(50ms)
+
+```
+Source: --1--2--3--4--5--6--7--8--9--|
+        |----50ms----|
+Result: -------[1,2,3]-------[4,5,6]-------[7,8,9]--|
+```
+
+### bufferTime(30ms, 50ms) - Overlapping
+
+```
+Source: --1--2--3--4--5--6--7--8--|
+        |--30ms--|
+        |----50ms----|
+Result: ----[1,2]-----[2,3,4]-----[5,6]-----[7,8]--|
+```
+
+## Common Use Cases
+
+1. **Event Aggregation**: Collect UI events (clicks, scrolls, key presses) within time windows
+2. **Analytics Batching**: Group analytics events before sending to server
+3. **Real-time Monitoring**: Aggregate sensor readings or metrics over time periods
+4. **Debounced Batch Processing**: Process bursts of events together
+5. **Rate Limiting**: Ensure operations don't exceed a certain frequency
+
+<Warning>
+  If the source completes, all active buffers are emitted immediately, regardless of their age or the `bufferTimeSpan`.
+</Warning>
+
+## Advanced Example: User Activity Monitoring
+
+```typescript
+import { fromEvent, bufferTime, map, filter } from 'rxjs';
+
+const clicks = fromEvent<MouseEvent>(document, 'click');
+const mouseMoves = fromEvent<MouseEvent>(document, 'mousemove');
+const keyPresses = fromEvent<KeyboardEvent>(document, 'keypress');
+
+// Collect all activity every 5 seconds
+const activityMonitor = merge(
+  clicks.pipe(map(() => ({ type: 'click', time: Date.now() }))),
+  mouseMoves.pipe(map(() => ({ type: 'move', time: Date.now() }))),
+  keyPresses.pipe(map(() => ({ type: 'key', time: Date.now() })))
+).pipe(
+  bufferTime(5000),
+  filter(activities => activities.length > 0),
+  map(activities => ({
+    count: activities.length,
+    clicks: activities.filter(a => a.type === 'click').length,
+    moves: activities.filter(a => a.type === 'move').length,
+    keys: activities.filter(a => a.type === 'key').length,
+    timestamp: Date.now()
+  }))
+);
+
+activityMonitor.subscribe(summary => {
+  console.log('Activity summary:', summary);
+  // Send to analytics endpoint
+  fetch('/api/analytics', {
+    method: 'POST',
+    body: JSON.stringify(summary)
+  });
+});
+```
+
+## Performance Considerations
+
+<Tip>
+  When using `maxBufferSize`, buffers may be emitted before the time span elapses, which can help prevent memory issues with high-frequency sources.
+</Tip>
+
+- The operator maintains subscriptions for each active buffer
+- Memory is properly released when buffers are emitted
+- Use `maxBufferSize` to prevent unbounded memory growth with fast sources
+
+## Related Operators
+
+- **[buffer](/api/operators/buffer)** - Buffer based on a notifier Observable
+- **[bufferCount](/api/operators/buffercount)** - Buffer based on count
+- **[bufferToggle](/api/operators/buffertoggle)** - Buffer with opening and closing signals
+- **[bufferWhen](/api/operators/bufferwhen)** - Buffer using a factory function
+- **[windowTime](/api/operators/windowtime)** - Like bufferTime, but emits Observables instead of arrays

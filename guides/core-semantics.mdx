@@ -1,0 +1,615 @@
+---
+title: 'RxJS Core Semantics'
+description: 'Understanding the design principles and semantic guidelines that govern RxJS operators'
+---
+
+Starting in RxJS v8, all operators in the core library **MUST** meet specific semantic guidelines. In v7, operators **SHOULD** meet these guidelines. This document defines the predictable behavior users can expect from RxJS.
+
+<Note>
+  These semantics ensure consistent behavior across all RxJS operators and provide a predictable experience for library users.
+</Note>
+
+## Purpose
+
+The purpose of these semantics is to:
+
+- Provide **predictable behavior** for RxJS users
+- Ensure **consistent behavior** between operators
+- Serve as a **goalpost** for future development
+- Help **describe the library** to developers
+
+<Warning>
+  This is a living document subject to change. Not all current operators fully comply yet - we're tracking issues on [GitHub](https://github.com/ReactiveX/rxjs/issues).
+</Warning>
+
+## General Design Guidelines
+
+### Named Parameters
+
+Functions with multiple arguments should use named parameters for clarity when arguments after the first are non-obvious:
+
+<CodeGroup>
+```typescript Good - Primary Use Case
+// Single obvious argument
+map(n => n * 2)
+
+// Multiple obvious arguments
+of(1, 2, 3)
+```
+
+```typescript Good - Named Config Object
+// Non-obvious second parameter uses config
+retry({
+  count: 3,
+  delay: 1000
+})
+
+mergeMap(n => fetch(n), {
+  concurrent: 3
+})
+```
+
+```typescript Avoid - Magic Numbers
+// What does '1' mean here?
+fakeFlattenMap(n => of(n), 1)
+
+// Better:
+fakeFlattenMap(n => of(n), { maxConcurrent: 1 })
+```
+</CodeGroup>
+
+<Tip>
+  The primary use case should be streamlined to work without configuration. Additional options should use descriptive named parameters.
+</Tip>
+
+## Operator Semantics
+
+### Basic Operator Structure
+
+Operators MUST follow this structure:
+
+```typescript
+// Operator function that returns an operator function
+function myOperator<T>(config?: Config): OperatorFunction<T, T> {
+  return (source: Observable<T>) => {
+    return new Observable<T>(subscriber => {
+      // Subscribe to source and implement logic
+      return source.subscribe({
+        next: value => subscriber.next(value),
+        error: err => subscriber.error(err),
+        complete: () => subscriber.complete()
+      });
+    });
+  };
+}
+```
+
+### Referential Transparency
+
+<Accordion title="What is Referential Transparency?">
+  An operator is referentially transparent if you can capture its return value and use it on multiple Observables without any shared state.
+</Accordion>
+
+<CodeGroup>
+```typescript Good - Referentially Transparent
+import { map } from 'rxjs';
+
+// Capture the operator once
+const double = map(x => x * 2);
+
+// Use on multiple observables without side effects
+a$.pipe(double).subscribe();
+b$.pipe(double).subscribe();
+c$.pipe(double).subscribe();
+
+// Each usage is independent
+```
+
+```typescript Bad - Shared State
+// Anti-pattern: operator with shared state
+let count = 0;
+const badOperator = map(x => {
+  count++; // Shared mutable state!
+  return x * count;
+});
+
+a$.pipe(badOperator); // count = 1, 2, 3...
+b$.pipe(badOperator); // count continues from previous!
+```
+</CodeGroup>
+
+### Source Subscription
+
+**The observable returned by an operator MUST subscribe to the source.**
+
+```typescript
+import { Observable } from 'rxjs';
+
+function myOperator<T>() {
+  return (source: Observable<T>) => {
+    return new Observable<T>(subscriber => {
+      // MUST subscribe to source
+      const subscription = source.subscribe({
+        next: value => subscriber.next(value),
+        error: err => subscriber.error(err),
+        complete: () => subscriber.complete()
+      });
+      
+      // Return teardown logic
+      return subscription;
+    });
+  };
+}
+```
+
+### Identity Optimization
+
+<Tip>
+  If an operator knows it won't change the source output, it MUST return the source reference directly.
+</Tip>
+
+<CodeGroup>
+```typescript take - Identity Cases
+import { take } from 'rxjs';
+
+// take(Infinity) won't change anything
+source$.pipe(take(Infinity)) === source$ // true (same reference)
+
+// take(5) might change output
+source$.pipe(take(5)) !== source$ // different reference
+```
+
+```typescript skip - Identity Cases
+import { skip } from 'rxjs';
+
+// skip(0) won't skip anything
+source$.pipe(skip(0)) === source$ // true (same reference)
+
+// skip(2) will skip values
+source$.pipe(skip(2)) !== source$ // different reference
+```
+
+```typescript Custom Operator with Identity
+function customTake<T>(count: number) {
+  return (source: Observable<T>) => {
+    // Identity optimization
+    if (count === Infinity) {
+      return source; // Return source reference unchanged
+    }
+    
+    // Normal processing
+    return new Observable<T>(subscriber => {
+      let taken = 0;
+      return source.subscribe({
+        next: value => {
+          if (taken++ < count) {
+            subscriber.next(value);
+          } else {
+            subscriber.complete();
+          }
+        },
+        error: err => subscriber.error(err),
+        complete: () => subscriber.complete()
+      });
+    });
+  };
+}
+```
+</CodeGroup>
+
+## Notifier Observables
+
+Many operators accept "notifier" Observables that trigger behavior (like `takeUntil`, `repeatWhen`, etc.).
+
+### Notifier Requirements
+
+<Steps>
+  <Step title="Accept Any Observable-Like">
+    Notifiers MUST accept any type convertible to Observable with `from`:
+    
+    ```typescript
+    import { takeUntil, from } from 'rxjs';
+    
+    // Accept Observable
+    source$.pipe(takeUntil(other$))
+    
+    // Accept Promise
+    source$.pipe(takeUntil(Promise.resolve()))
+    
+    // Accept Array
+    source$.pipe(takeUntil([1, 2, 3]))
+    ```
+  </Step>
+
+  <Step title="Only Next Values as Notifications">
+    Only `next` emissions from notifiers count as notifications:
+    
+    ```typescript
+    import { takeUntil, EMPTY, throwError } from 'rxjs';
+    
+    // This WILL trigger takeUntil
+    source$.pipe(takeUntil(of(1)))
+    
+    // This will NOT trigger takeUntil (completes without emitting)
+    source$.pipe(takeUntil(EMPTY))
+    
+    // This will NOT trigger takeUntil (errors without emitting)
+    source$.pipe(takeUntil(throwError(() => new Error('fail'))))
+    ```
+  </Step>
+
+  <Step title="Subscribe to Direct Notifiers First">
+    Notifiers provided directly MUST be subscribed to BEFORE the source:
+    
+    ```typescript
+    import { takeUntil } from 'rxjs';
+    
+    // notifier$ is subscribed BEFORE source$
+    source$.pipe(takeUntil(notifier$))
+    
+    // Order: notifier$ subscription → source$ subscription
+    ```
+  </Step>
+
+  <Step title="Subscribe to Factory Notifiers ASAP">
+    Notifiers from factory functions SHOULD be subscribed at earliest moment:
+    
+    ```typescript
+    import { retryWhen, delay } from 'rxjs';
+    
+    source$.pipe(
+      retryWhen(errors$ => 
+        // This factory is called when needed
+        // Subscription happens as soon as error occurs
+        errors$.pipe(delay(1000))
+      )
+    )
+    ```
+  </Step>
+</Steps>
+
+## Resource Management
+
+### Unsubscription Timing
+
+<Warning>
+  Operators MUST unsubscribe from the source as soon as they know they no longer need values, BEFORE taking any other action.
+</Warning>
+
+```typescript Example: take Operator
+import { take } from 'rxjs';
+
+source$.pipe(
+  take(3),
+  tap(() => console.log('After take'))
+).subscribe();
+
+// Correct behavior:
+// 1. Receive 3rd value
+// 2. Unsubscribe from source immediately
+// 3. Emit 3rd value downstream
+// 4. Complete
+```
+
+### Finalization Timing
+
+Events after source completion SHOULD happen after source finalizes:
+
+<CodeGroup>
+```typescript Correct - Finalize First
+import { finalize, endWith } from 'rxjs';
+
+source$.pipe(
+  finalize(() => console.log('Finalized')),
+  endWith('END')
+).subscribe();
+
+// Output order:
+// 1. All source values
+// 2. "Finalized" (finalization)
+// 3. "END" (endWith emission)
+// 4. complete
+```
+
+```typescript Memory Management
+import { Observable } from 'rxjs';
+
+function properOperator<T>() {
+  return (source: Observable<T>) => {
+    return new Observable<T>(subscriber => {
+      let error: Error | null = null;
+      
+      const subscription = source.subscribe({
+        next: value => subscriber.next(value),
+        error: err => {
+          error = err; // Store temporarily
+          subscriber.error(err);
+        },
+        complete: () => subscriber.complete()
+      });
+      
+      return () => {
+        subscription.unsubscribe();
+        // Clear reference ASAP
+        error = null;
+      };
+    });
+  };
+}
+```
+</CodeGroup>
+
+### Memory Pressure Prevention
+
+<Note>
+  Operators MUST NOT retain references to Errors or Promises longer than necessary.
+</Note>
+
+<CodeGroup>
+```typescript Good - Release References
+import { catchError, of } from 'rxjs';
+
+function safeOperator<T>() {
+  return (source: Observable<T>) => {
+    return new Observable<T>(subscriber => {
+      let error: Error | undefined;
+      
+      const sub = source.subscribe({
+        error: err => {
+          error = err;
+          subscriber.error(err);
+          error = undefined; // Release immediately
+        }
+      });
+      
+      return () => {
+        sub.unsubscribe();
+        error = undefined; // Ensure cleanup
+      };
+    });
+  };
+}
+```
+
+```typescript Bad - Retained References
+function leakyOperator<T>() {
+  const errors: Error[] = []; // Memory leak!
+  
+  return (source: Observable<T>) => {
+    return new Observable<T>(subscriber => {
+      return source.subscribe({
+        error: err => {
+          errors.push(err); // Never cleared!
+          subscriber.error(err);
+        }
+      });
+    });
+  };
+}
+```
+</CodeGroup>
+
+## Operator Naming Conventions
+
+### The "With" Suffix Rule
+
+<Tip>
+  Operators that perform related operations to creation functions SHOULD share the name with suffix `With`.
+</Tip>
+
+<Accordion title="Creation Functions vs Operators">
+  | Creation Function | Operator | Description |
+  |-------------------|----------|-------------|
+  | `concat(a$, b$)` | `concatWith(b$)` | Concatenate observables |
+  | `merge(a$, b$)` | `mergeWith(b$)` | Merge observables |
+  | `zip(a$, b$)` | `zipWith(b$)` | Zip observables |
+  | `combineLatest([a$, b$])` | `combineLatestWith(b$)` | Combine latest values |
+  | `race(a$, b$)` | `raceWith(b$)` | Race between observables |
+</Accordion>
+
+<CodeGroup>
+```typescript Creation Function
+import { concat, of } from 'rxjs';
+
+// Static: combines multiple sources
+concat(
+  of(1, 2),
+  of(3, 4),
+  of(5, 6)
+).subscribe(console.log);
+// Output: 1, 2, 3, 4, 5, 6
+```
+
+```typescript Operator (With suffix)
+import { of, concatWith } from 'rxjs';
+
+// Pipeable: adds sources to existing observable
+of(1, 2).pipe(
+  concatWith(of(3, 4)),
+  concatWith(of(5, 6))
+).subscribe(console.log);
+// Output: 1, 2, 3, 4, 5, 6
+```
+</CodeGroup>
+
+### Result Selectors
+
+<Warning>
+  Operators SHOULD NOT have "result selectors" (secondary mapping functions). Use separate `map` operator instead.
+</Warning>
+
+<CodeGroup>
+```typescript Avoid - Result Selector
+// Old pattern (being phased out)
+mergeMap(
+  value => fetch(value),
+  (outer, inner) => ({ outer, inner }) // result selector
+)
+```
+
+```typescript Prefer - Separate map
+import { mergeMap, map } from 'rxjs';
+
+// Modern pattern (explicit and clear)
+mergeMap(value => fetch(value)).pipe(
+  map(inner => ({ outer: value, inner }))
+)
+```
+</CodeGroup>
+
+## Creation Function Semantics
+
+### Naming Rules
+
+<Note>
+  Creation function names MUST NOT end in `With`. That suffix is reserved for operators.
+</Note>
+
+```typescript
+// Good - Creation functions
+of(1, 2, 3)
+from([1, 2, 3])
+interval(1000)
+merge(a$, b$, c$)
+
+// Good - Related operators
+concatWith(b$)
+mergeWith(c$)
+startWith(0)
+```
+
+### Result Selectors in Creation Functions
+
+Creation functions MAY have result selectors (unlike operators):
+
+```typescript
+import { combineLatest } from 'rxjs';
+
+// Allowed for creation functions
+combineLatest(
+  [source1$, source2$],
+  (a, b) => a + b // Result selector OK here
+).subscribe(console.log);
+```
+
+### Avoid N-Arguments Before Result Selector
+
+If a creation function accepts a result selector, it should accept an array or object, not n-arguments:
+
+<CodeGroup>
+```typescript Bad - N-arguments
+// Hard to read, unclear structure
+combineThings(sourceA$, sourceB$, sourceC$, (a, b, c) => a + b + c)
+```
+
+```typescript Good - Array
+import { combineLatest } from 'rxjs';
+
+// Clear array of sources, clear result selector
+combineLatest(
+  [sourceA$, sourceB$, sourceC$],
+  (a, b, c) => a + b + c
+)
+```
+</CodeGroup>
+
+## Practical Examples
+
+### Building a Semantic Operator
+
+Here's a complete example following all semantic guidelines:
+
+```typescript
+import { Observable, OperatorFunction } from 'rxjs';
+
+interface TakeUntilConfig {
+  inclusive?: boolean;
+}
+
+/**
+ * Takes values until notifier emits
+ */
+function takeUntilSemantic<T>(
+  notifier: Observable<any>,
+  config?: TakeUntilConfig
+): OperatorFunction<T, T> {
+  return (source: Observable<T>) => {
+    return new Observable<T>(subscriber => {
+      let notifierCompleted = false;
+      
+      // Subscribe to notifier FIRST (semantic requirement)
+      const notifierSub = notifier.subscribe({
+        next: () => {
+          // Only 'next' triggers behavior (semantic requirement)
+          if (!config?.inclusive) {
+            // Unsubscribe BEFORE emitting complete (semantic requirement)
+            sourceSub.unsubscribe();
+            notifierSub.unsubscribe();
+          }
+          subscriber.complete();
+        },
+        complete: () => {
+          notifierCompleted = true;
+        }
+      });
+      
+      // Then subscribe to source
+      const sourceSub = source.subscribe({
+        next: value => subscriber.next(value),
+        error: err => {
+          notifierSub.unsubscribe();
+          subscriber.error(err);
+        },
+        complete: () => {
+          notifierSub.unsubscribe();
+          subscriber.complete();
+        }
+      });
+      
+      // Cleanup (semantic requirement)
+      return () => {
+        sourceSub.unsubscribe();
+        notifierSub.unsubscribe();
+      };
+    });
+  };
+}
+```
+
+## Summary of Key Semantics
+
+<Steps>
+  <Step title="Operator Structure">
+    - Return OperatorFunction signature
+    - Subscribe to source
+    - Provide proper teardown
+  </Step>
+
+  <Step title="Referential Transparency">
+    - No shared state between uses
+    - Can be captured and reused
+  </Step>
+
+  <Step title="Identity Optimization">
+    - Return source if no change
+    - Improves performance
+  </Step>
+
+  <Step title="Notifier Handling">
+    - Accept any Observable-like
+    - Only 'next' values notify
+    - Subscribe to direct notifiers first
+  </Step>
+
+  <Step title="Resource Management">
+    - Unsubscribe ASAP
+    - Release Error/Promise references
+    - Finalize before post-completion events
+  </Step>
+
+  <Step title="Naming Conventions">
+    - Use 'With' suffix for related operators
+    - Named parameters for complex config
+    - No result selectors in operators
+  </Step>
+</Steps>

@@ -1,0 +1,326 @@
+---
+title: distinct
+description: Filters out duplicate values from an Observable stream
+---
+
+## Overview
+
+Returns an Observable that emits all items emitted by the source Observable that are distinct by comparison from previous items.
+
+<Note>
+In JavaScript runtimes that support `Set`, this operator uses a `Set` for improved performance. In other runtimes, it uses an Array with `indexOf` for checking distinctness.
+</Note>
+
+## Type Signature
+
+```typescript
+function distinct<T, K>(
+  keySelector?: (value: T) => K,
+  flushes?: ObservableInput<any>
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="keySelector" type="(value: T) => K" optional>
+  Optional function to select which value you want to check as distinct. If provided, it projects each value from the source observable into a new value that will be checked for equality with previously projected values.
+  
+  If not provided, the operator uses each value from the source directly with an equality check against previous values.
+</ParamField>
+
+<ParamField path="flushes" type="ObservableInput<any>" optional>
+  Optional ObservableInput for flushing the internal HashSet of the operator. When the flushes Observable emits, the internal Set is cleared, allowing previously seen values to be emitted again.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits items from the source Observable with distinct values.
+
+## How It Works
+
+1. Maintains an internal **Set** (or Array) of seen keys
+2. For each emitted value:
+   - Applies `keySelector` if provided, otherwise uses the value itself
+   - Checks if the key exists in the Set
+   - If **not seen before**: adds to Set and **emits** the value
+   - If **already seen**: **skips** the value
+3. If `flushes` Observable emits, the Set is **cleared**
+
+<Warning>
+Long-running `distinct` operations can result in **memory leaks** as the Set grows. Use the `flushes` parameter to periodically clear the Set, or use `distinctUntilChanged` if you only need to compare consecutive values.
+</Warning>
+
+## Usage Examples
+
+### Basic Example: Distinct Numbers
+
+```typescript
+import { of, distinct } from 'rxjs';
+
+of(1, 1, 2, 2, 2, 1, 2, 3, 4, 3, 2, 1)
+  .pipe(distinct())
+  .subscribe(x => console.log(x));
+
+// Output:
+// 1
+// 2
+// 3
+// 4
+```
+
+### Using keySelector with Objects
+
+```typescript
+import { of, distinct } from 'rxjs';
+
+interface Person {
+  age: number;
+  name: string;
+}
+
+of<Person>(
+  { age: 4, name: 'Foo' },
+  { age: 7, name: 'Bar' },
+  { age: 5, name: 'Foo' }
+)
+  .pipe(distinct(person => person.name))
+  .subscribe(x => console.log(x));
+
+// Output:
+// { age: 4, name: 'Foo' }
+// { age: 7, name: 'Bar' }
+```
+
+### Distinct User IDs from Events
+
+```typescript
+import { fromEvent, distinct, map } from 'rxjs';
+
+interface UserEvent {
+  userId: string;
+  action: string;
+  timestamp: number;
+}
+
+const events$ = getEventStream<UserEvent>();
+
+const uniqueUsers$ = events$.pipe(
+  distinct(event => event.userId),
+  map(event => event.userId)
+);
+
+uniqueUsers$.subscribe(userId => {
+  console.log('First action from user:', userId);
+  // Send welcome message, track first interaction, etc.
+});
+```
+
+<CodeGroup>
+```typescript Product Views
+import { distinct, map } from 'rxjs';
+
+interface ProductView {
+  productId: string;
+  userId: string;
+  timestamp: number;
+}
+
+const productViews$ = getProductViews();
+
+// Track unique products viewed
+const uniqueProducts$ = productViews$.pipe(
+  distinct(view => view.productId),
+  map(view => view.productId)
+);
+
+uniqueProducts$.subscribe(productId => {
+  console.log('Product viewed for first time:', productId);
+  // Update analytics, recommendations, etc.
+});
+```
+
+```typescript Unique Email Addresses
+import { distinct, map } from 'rxjs';
+
+interface Subscription {
+  email: string;
+  topic: string;
+  timestamp: number;
+}
+
+const subscriptions$ = getSubscriptions();
+
+const uniqueEmails$ = subscriptions$.pipe(
+  distinct(sub => sub.email.toLowerCase()),
+  map(sub => sub.email)
+);
+
+uniqueEmails$.subscribe(email => {
+  console.log('New subscriber:', email);
+  sendWelcomeEmail(email);
+});
+```
+
+```typescript Distinct Categories
+import { distinct, map } from 'rxjs';
+
+interface Article {
+  id: string;
+  title: string;
+  category: string;
+}
+
+const articles$ = getArticleStream();
+
+const categories$ = articles$.pipe(
+  distinct(article => article.category),
+  map(article => article.category)
+);
+
+categories$.subscribe(category => {
+  console.log('New category discovered:', category);
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `distinct` when:
+- You need to **filter out all duplicates** across the entire stream
+- Tracking **unique users, IDs, or entities**
+- Building **"seen before"** logic
+- Creating **unique lists** from streams
+
+### Don't use `distinct` when:
+- You only need to compare **consecutive values** (use `distinctUntilChanged` instead)
+- The stream is **very long-running** without flushes (memory leak risk)
+- You need **temporal distinctness** (consider `distinct` with `flushes`)
+- Order matters and you need **all values** (wrong operator)
+
+## Common Patterns
+
+### Periodic Flush to Prevent Memory Leaks
+
+```typescript
+import { interval, distinct, map } from 'rxjs';
+
+const events$ = getEventStream();
+const flushEveryHour$ = interval(60 * 60 * 1000);
+
+const distinctWithFlush$ = events$.pipe(
+  distinct(
+    event => event.id,
+    flushEveryHour$ // Clear the Set every hour
+  )
+);
+
+distinctWithFlush$.subscribe(event => {
+  console.log('Unique event:', event);
+});
+```
+
+### Track First-Time Visitors
+
+```typescript
+import { distinct, tap } from 'rxjs';
+
+interface PageView {
+  userId: string;
+  page: string;
+  timestamp: number;
+}
+
+const pageViews$ = getPageViews();
+
+const firstTimeVisitors$ = pageViews$.pipe(
+  distinct(view => view.userId),
+  tap(view => {
+    // This only runs for first-time visitors
+    trackFirstVisit(view.userId);
+    showWelcomeMessage();
+  })
+);
+
+firstTimeVisitors$.subscribe();
+```
+
+### Distinct with Case-Insensitive Keys
+
+```typescript
+import { of, distinct } from 'rxjs';
+
+const tags$ = of('JavaScript', 'typescript', 'JAVASCRIPT', 'TypeScript', 'React');
+
+const uniqueTags$ = tags$.pipe(
+  distinct(tag => tag.toLowerCase())
+);
+
+uniqueTags$.subscribe(tag => console.log(tag));
+// Output:
+// JavaScript
+// typescript
+// React
+```
+
+### Composite Keys
+
+```typescript
+import { distinct } from 'rxjs';
+
+interface Vote {
+  userId: string;
+  pollId: string;
+  choice: string;
+}
+
+const votes$ = getVotes();
+
+// Ensure each user can only vote once per poll
+const uniqueVotes$ = votes$.pipe(
+  distinct(vote => `${vote.userId}:${vote.pollId}`)
+);
+
+uniqueVotes$.subscribe(vote => {
+  recordVote(vote);
+});
+```
+
+<Tip>
+For objects, the `keySelector` function is essential. Without it, `distinct` uses reference equality, which means two objects with identical properties will be considered different.
+</Tip>
+
+## Performance Considerations
+
+```typescript
+import { interval, distinct, take } from 'rxjs';
+
+// Memory usage grows with each unique value
+const numbers$ = interval(100).pipe(
+  take(10000),
+  distinct() // Will store 10,000 values in memory
+);
+
+// Better: Use flushes to limit memory growth
+const betterNumbers$ = interval(100).pipe(
+  take(10000),
+  distinct(
+    x => x,
+    interval(10000) // Flush every 10 seconds
+  )
+);
+```
+
+## Comparison with Similar Operators
+
+| Operator | Compares | Memory Usage | Use Case |
+|----------|----------|--------------|----------|
+| `distinct` | All previous values | **High** (grows over time) | Unique values across entire stream |
+| `distinctUntilChanged` | Only previous value | **Low** (constant) | Filter consecutive duplicates |
+| `distinctUntilKeyChanged` | Only previous key | **Low** (constant) | Filter consecutive duplicates by key |
+
+## Related Operators
+
+- **[distinctUntilChanged](/api/operators/distinctUntilChanged)** - Only compares consecutive values (memory efficient)
+- **[distinctUntilKeyChanged](/api/operators/distinctUntilKeyChanged)** - Consecutive comparison with key selector
+- **[filter](/api/operators/filter)** - General purpose filtering
+- **[take](/api/operators/take)** - Limit number of emissions

@@ -1,0 +1,477 @@
+---
+title: retryWhen
+description: Returns an Observable that retries the source when an error occurs, controlled by a notifier Observable.
+---
+
+<Warning>
+  **Deprecated**: This operator will be removed in v9 or v10. Use `retry` with the `delay` option instead. For `retryWhen(() => notify$)`, use `retry({ delay: () => notify$ })`.
+</Warning>
+
+## Overview
+
+`retryWhen` allows you to retry a failed Observable based on custom criteria by providing a notifier function. When the source errors, the error is emitted to a notifier Observable, which can control whether and when to retry.
+
+<Note>
+  While this operator is deprecated, understanding it is useful for maintaining existing code. New code should use `retry({ delay: () => notifier$ })` instead.
+</Note>
+
+## Type Signature
+
+```typescript
+export function retryWhen<T>(
+  notifier: (errors: Observable<any>) => ObservableInput<any>
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="notifier" type="(errors: Observable<any>) => ObservableInput<any>" required>
+  A function that receives an Observable of errors and returns an Observable. 
+  - When the returned Observable emits, the source is retried
+  - When the returned Observable completes, the output completes without error
+  - When the returned Observable errors, that error is propagated
+</ParamField>
+
+## Returns
+
+`MonoTypeOperatorFunction<T>` - An operator function that returns an Observable that mirrors the source, retrying based on the notifier Observable's emissions.
+
+## Usage Examples
+
+### Basic Example: Retry with Delay
+
+<CodeGroup>
+```typescript Basic RetryWhen
+import { interval, map, retryWhen, tap, delayWhen, timer } from 'rxjs';
+
+const source = interval(1000);
+const result = source.pipe(
+  map(value => {
+    if (value > 5) {
+      throw value;
+    }
+    return value;
+  }),
+  retryWhen(errors =>
+    errors.pipe(
+      tap(value => console.log(`Value ${value} was too high!`)),
+      delayWhen(value => timer(value * 1000))
+    )
+  )
+);
+
+result.subscribe(value => console.log(value));
+
+// Output:
+// 0
+// 1
+// 2
+// 3
+// 4
+// 5
+// 'Value 6 was too high!'
+// ... wait 6 seconds then repeat ...
+```
+
+```typescript Modern Alternative (Preferred)
+import { interval, map, retry, timer } from 'rxjs';
+
+const source = interval(1000);
+const result = source.pipe(
+  map(value => {
+    if (value > 5) {
+      throw value;
+    }
+    return value;
+  }),
+  retry({
+    delay: (error) => {
+      console.log(`Value ${error} was too high!`);
+      return timer(error * 1000);
+    }
+  })
+);
+
+result.subscribe(value => console.log(value));
+```
+</CodeGroup>
+
+### Real-World Example: Conditional Retry Logic
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retryWhen, tap, delayWhen, timer, throwError, take } from 'rxjs';
+
+interface ApiError {
+  status: number;
+  message: string;
+}
+
+function fetchDataWithConditionalRetry(url: string): Observable<any> {
+  return ajax.getJSON(url).pipe(
+    retryWhen(errors =>
+      errors.pipe(
+        tap(err => console.log('Error occurred:', err)),
+        // Analyze error and decide retry strategy
+        delayWhen((err: ApiError) => {
+          // Retry immediately on network errors
+          if (err.status === 0) {
+            console.log('Network error, retrying immediately...');
+            return timer(0);
+          }
+          
+          // Wait longer for server errors
+          if (err.status >= 500) {
+            console.log('Server error, waiting 5s before retry...');
+            return timer(5000);
+          }
+          
+          // Don't retry client errors
+          if (err.status >= 400 && err.status < 500) {
+            console.log('Client error, not retrying');
+            return throwError(() => err);
+          }
+          
+          // Default: wait 2s
+          return timer(2000);
+        }),
+        take(3) // Maximum 3 retries
+      )
+    )
+  );
+}
+
+fetchDataWithConditionalRetry('/api/data').subscribe({
+  next: data => console.log('Data loaded:', data),
+  error: err => console.error('Failed after retries:', err)
+});
+```
+
+### Exponential Backoff with Max Attempts
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retryWhen, scan, delayWhen, timer, throwError, tap } from 'rxjs';
+
+function fetchWithExponentialBackoff(url: string): Observable<any> {
+  return ajax.getJSON(url).pipe(
+    retryWhen(errors =>
+      errors.pipe(
+        scan((retryCount, err) => {
+          if (retryCount >= 5) {
+            throw err; // Max retries reached
+          }
+          return retryCount + 1;
+        }, 0),
+        tap(retryCount => {
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
+          console.log(`Retry attempt ${retryCount}, waiting ${delay}ms`);
+        }),
+        delayWhen(retryCount => {
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
+          return timer(delay);
+        })
+      )
+    )
+  );
+}
+
+fetchWithExponentialBackoff('/api/users').subscribe({
+  next: data => console.log('Success:', data),
+  error: err => console.error('Failed after all retries:', err)
+});
+
+// Retry delays:
+// Attempt 1: 1000ms
+// Attempt 2: 2000ms
+// Attempt 3: 4000ms
+// Attempt 4: 8000ms
+// Attempt 5: 16000ms
+```
+
+### User-Controlled Retry
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retryWhen, switchMap, tap } from 'rxjs';
+import { Subject } from 'rxjs';
+
+const retryClick$ = new Subject<void>();
+
+function fetchDataWithManualRetry(url: string): Observable<any> {
+  return ajax.getJSON(url).pipe(
+    retryWhen(errors =>
+      errors.pipe(
+        tap(err => {
+          console.error('Request failed:', err.message);
+          showRetryButton(); // Show UI button
+        }),
+        switchMap(() => retryClick$), // Wait for user to click retry
+        tap(() => {
+          console.log('Retrying...');
+          hideRetryButton();
+        })
+      )
+    )
+  );
+}
+
+fetchDataWithManualRetry('/api/data').subscribe({
+  next: data => {
+    console.log('Data loaded:', data);
+    displayData(data);
+  },
+  error: err => showErrorMessage(err)
+});
+
+// Wire up retry button
+const retryButton = document.getElementById('retry') as HTMLButtonElement;
+retryButton.addEventListener('click', () => retryClick$.next());
+```
+
+## Practical Scenarios
+
+<Note>
+  The notifier Observable must emit (not error) to trigger a retry. If it errors or completes without emitting, no retry occurs.
+</Note>
+
+### Scenario 1: Retry Based on Error Type
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retryWhen, mergeMap, timer, throwError, tap } from 'rxjs';
+
+interface RetryableError {
+  status: number;
+  retryable: boolean;
+  retryAfter?: number;
+}
+
+function smartRetry(url: string): Observable<any> {
+  return ajax.getJSON(url).pipe(
+    retryWhen(errors =>
+      errors.pipe(
+        mergeMap((err: RetryableError) => {
+          // Check Retry-After header for rate limiting
+          if (err.status === 429 && err.retryAfter) {
+            console.log(`Rate limited. Retrying after ${err.retryAfter}ms`);
+            return timer(err.retryAfter);
+          }
+          
+          // Retry server errors after delay
+          if (err.status >= 500) {
+            console.log('Server error, retrying in 3s...');
+            return timer(3000);
+          }
+          
+          // Don't retry client errors
+          console.error('Non-retryable error:', err.status);
+          return throwError(() => err);
+        })
+      )
+    )
+  );
+}
+
+smartRetry('/api/data').subscribe({
+  next: data => console.log('Success:', data),
+  error: err => console.error('Final error:', err)
+});
+```
+
+### Scenario 2: Circuit Breaker Pattern
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retryWhen, scan, tap, delayWhen, timer, throwError } from 'rxjs';
+
+interface CircuitState {
+  failureCount: number;
+  lastFailure: number;
+  isOpen: boolean;
+}
+
+function fetchWithCircuitBreaker(url: string): Observable<any> {
+  const circuitState: CircuitState = {
+    failureCount: 0,
+    lastFailure: 0,
+    isOpen: false
+  };
+
+  return ajax.getJSON(url).pipe(
+    retryWhen(errors =>
+      errors.pipe(
+        tap(err => {
+          circuitState.failureCount++;
+          circuitState.lastFailure = Date.now();
+          
+          // Open circuit after 5 failures
+          if (circuitState.failureCount >= 5) {
+            circuitState.isOpen = true;
+            console.log('Circuit breaker opened!');
+          }
+        }),
+        delayWhen(() => {
+          // If circuit is open, wait 30s before trying again
+          if (circuitState.isOpen) {
+            const timeSinceLastFailure = Date.now() - circuitState.lastFailure;
+            if (timeSinceLastFailure < 30000) {
+              console.log('Circuit open, waiting...');
+              return timer(30000 - timeSinceLastFailure);
+            } else {
+              // Try to close circuit (half-open state)
+              console.log('Attempting to close circuit...');
+              circuitState.isOpen = false;
+              circuitState.failureCount = 0;
+              return timer(0);
+            }
+          }
+          
+          // Normal retry delay
+          return timer(2000);
+        })
+      )
+    ),
+    tap(() => {
+      // Success - reset circuit
+      if (circuitState.failureCount > 0) {
+        console.log('Circuit breaker reset');
+        circuitState.failureCount = 0;
+        circuitState.isOpen = false;
+      }
+    })
+  );
+}
+
+fetchWithCircuitBreaker('/api/data').subscribe({
+  next: data => console.log('Data:', data),
+  error: err => console.error('Error:', err)
+});
+```
+
+### Scenario 3: Retry with User Notification
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { retryWhen, tap, scan, delayWhen, timer } from 'rxjs';
+
+function fetchWithProgressiveNotifications(url: string): Observable<any> {
+  return ajax.getJSON(url).pipe(
+    retryWhen(errors =>
+      errors.pipe(
+        scan((retryCount, err) => {
+          const count = retryCount + 1;
+          
+          // Show different notifications based on retry count
+          if (count === 1) {
+            showToast('Connection issue, retrying...');
+          } else if (count === 3) {
+            showNotification('Still having trouble connecting...');
+          } else if (count === 5) {
+            showWarning('Multiple connection failures detected');
+          }
+          
+          if (count >= 10) {
+            throw new Error('Max retries exceeded');
+          }
+          
+          return count;
+        }, 0),
+        delayWhen(retryCount => {
+          const delay = Math.min(1000 * retryCount, 10000);
+          return timer(delay);
+        })
+      )
+    ),
+    tap(() => {
+      // Success - clear any error notifications
+      clearNotifications();
+      showToast('Connected successfully');
+    })
+  );
+}
+
+fetchWithProgressiveNotifications('/api/data').subscribe({
+  next: data => displayData(data),
+  error: err => showError('Unable to connect after multiple attempts')
+});
+```
+
+## Behavior Details
+
+### Notifier Emissions
+
+- Each error triggers an emission to the notifier Observable
+- When notifier emits, the source is resubscribed
+- When notifier completes (without error), output completes successfully
+- When notifier errors, that error is propagated
+
+<Warning>
+  The notifier function receives a **hot Observable** of errors. Be careful with operators that might not replay values for late subscribers.
+</Warning>
+
+```typescript
+import { throwError, retryWhen, tap, delay } from 'rxjs';
+
+let errorCount = 0;
+
+throwError(() => new Error('Test')).pipe(
+  tap(() => console.log(`Attempt ${++errorCount}`)),
+  retryWhen(errors => 
+    errors.pipe(
+      tap(err => console.log('Error caught:', err.message)),
+      delay(1000),
+      take(2) // Only allow 2 retries
+    )
+  )
+).subscribe({
+  next: x => console.log('Value:', x),
+  complete: () => console.log('Complete'),
+  error: err => console.log('Final error:', err.message)
+});
+
+// Output:
+// Attempt 1
+// Error caught: Test
+// Attempt 2
+// Error caught: Test
+// Attempt 3
+// Complete (notifier completes after 2 emissions)
+```
+
+### Migration to retry()
+
+Here's how to migrate from `retryWhen` to the modern `retry` operator:
+
+```typescript
+// Old way (retryWhen)
+import { retryWhen, delayWhen, timer, tap } from 'rxjs';
+
+source$.pipe(
+  retryWhen(errors => 
+    errors.pipe(
+      tap(err => console.log('Error:', err)),
+      delayWhen(() => timer(1000))
+    )
+  )
+)
+
+// New way (retry with delay)
+import { retry, tap } from 'rxjs';
+
+source$.pipe(
+  retry({
+    delay: (error, retryCount) => {
+      console.log('Error:', error);
+      return timer(1000);
+    }
+  })
+)
+```
+
+## Related Operators
+
+- [`retry`](/api/operators/retry) - Modern retry operator with configuration object
+- [`catchError`](/api/operators/catchError) - Handle errors with custom recovery logic
+- [`repeat`](/api/operators/repeat) - Resubscribe on successful completion
+- [`throwError`](/api/operators/throwError) - Create an Observable that errors immediately

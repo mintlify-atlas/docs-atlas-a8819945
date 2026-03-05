@@ -1,0 +1,880 @@
+---
+title: 'Breaking Changes in v7'
+description: 'Complete reference of all breaking changes introduced in RxJS version 7'
+---
+
+# Breaking Changes in RxJS v7
+
+This page documents all breaking changes introduced in RxJS v7. Understanding these changes is critical for successfully migrating from v6.
+
+## General Breaking Changes
+
+### TypeScript Version Requirement
+
+<Warning>
+  **RxJS v7 requires TypeScript 4.2 or higher**. Earlier versions of TypeScript are not supported.
+</Warning>
+
+```bash
+npm install -D typescript@^4.2.0
+```
+
+### rxjs-compat Removed
+
+<Warning>
+  The `rxjs-compat` package is **not published for v7**. You must migrate away from all deprecated v6 APIs before upgrading.
+</Warning>
+
+### Observable Changes
+
+#### lift No Longer Exposed
+
+The `lift` operator is no longer publicly exposed. Create custom operators using the documented pattern:
+
+<CodeGroup>
+```ts Broken - Using lift
+import { Observable } from 'rxjs';
+
+function customOperator() {
+  return (source: Observable<any>) => {
+    return (source as any).lift(/* ... */); // TypeScript error!
+  };
+}
+```
+
+```ts Fixed - New Observable
+import { Observable } from 'rxjs';
+
+function customOperator<T, R>(
+  transform: (value: T) => R
+) {
+  return (source: Observable<T>) => {
+    return new Observable<R>(subscriber => {
+      return source.subscribe({
+        next(value) {
+          try {
+            subscriber.next(transform(value));
+          } catch (err) {
+            subscriber.error(err);
+          }
+        },
+        error(err) { subscriber.error(err); },
+        complete() { subscriber.complete(); }
+      });
+    });
+  };
+}
+```
+</CodeGroup>
+
+#### Internal Methods Protected
+
+Several internal methods are no longer public:
+
+<Warning>
+- `Observable._subscribe` is now `@internal`
+- `Observable._trySubscribe` is now `@internal`  
+- `Observable._isScalar` property removed
+- `Observable.if` and `Observable.throw` static properties removed
+</Warning>
+
+#### pipe Return Type Changes
+
+<CodeGroup>
+```ts RxJS v6
+import { of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// 9+ arguments returned Observable<{}>
+const result = of(1).pipe(
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x)
+); // Observable<{}>
+```
+
+```ts RxJS v7
+import { of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// 9+ arguments now return Observable<unknown>
+const result = of(1).pipe(
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x),
+  map(x => x)
+); // Observable<unknown>
+```
+</CodeGroup>
+
+#### toPromise Return Type
+
+<Warning>
+  **Breaking**: `toPromise()` now correctly returns `Promise<T | undefined>` instead of `Promise<T>`.
+</Warning>
+
+<CodeGroup>
+```ts RxJS v6
+import { EMPTY } from 'rxjs';
+
+const result: Promise<number> = EMPTY.toPromise();
+// result resolves to undefined but type says number
+```
+
+```ts RxJS v7
+import { EMPTY } from 'rxjs';
+
+const result: Promise<number | undefined> = EMPTY.toPromise();
+// Type correctly reflects undefined possibility
+```
+</CodeGroup>
+
+### Subscription Changes
+
+#### add() Returns void
+
+<Warning>
+  **Breaking**: `Subscription.add()` no longer returns a `Subscription`. It now returns `void`.
+</Warning>
+
+<CodeGroup>
+```ts RxJS v6
+import { Subscription, interval } from 'rxjs';
+
+const subscription = new Subscription();
+const sub1 = subscription.add(
+  interval(1000).subscribe()
+);
+// sub1 is a Subscription
+subscription.remove(sub1);
+```
+
+```ts RxJS v7
+import { Subscription, interval } from 'rxjs';
+
+const subscription = new Subscription();
+const teardown = () => console.log('cleanup');
+
+subscription.add(teardown); // Returns void
+subscription.remove(teardown); // Remove by reference
+```
+</CodeGroup>
+
+#### Removed Internal Properties
+
+<Warning>
+- `Subscription._parentOrParents` property removed
+- `Subscriber._unsubscribeAndRecycle` method removed
+- `Subscriber.syncErrorThrowable` property removed
+- `Subscriber.syncErrorThrown` property removed  
+- `Subscriber.syncErrorValue` property removed
+</Warning>
+
+### Subscriber Changes
+
+#### Constructor Signature Changed
+
+<Warning>
+  **Breaking**: `new Subscriber()` no longer accepts 0-3 function arguments. Use `Subscriber.create()` instead (though both are deprecated).
+</Warning>
+
+```ts
+import { Subscriber } from 'rxjs';
+
+// Broken in v7
+const subscriber = new Subscriber(
+  x => console.log(x),
+  err => console.error(err),
+  () => console.log('complete')
+);
+
+// Use Subscriber.create (deprecated) or Observer objects
+const subscriber = Subscriber.create(
+  x => console.log(x),
+  err => console.error(err),  
+  () => console.log('complete')
+);
+```
+
+#### this Context No Longer Available
+
+<Warning>
+  The `this` context in observer functions no longer provides access to `unsubscribe()`.
+</Warning>
+
+<CodeGroup>
+```ts RxJS v6
+import { of } from 'rxjs';
+
+of(1, 2, 3).subscribe(function(value) {
+  console.log(value);
+  if (value === 2) {
+    this.unsubscribe(); // Works in v6
+  }
+});
+```
+
+```ts RxJS v7
+import { of } from 'rxjs';
+
+const subscription = of(1, 2, 3).subscribe(value => {
+  console.log(value);
+  if (value === 2) {
+    subscription.unsubscribe(); // Use subscription reference
+  }
+});
+
+// Or re-enable old behavior (not recommended)
+import { config } from 'rxjs';
+config.useDeprecatedNextContext = true; // Performance penalty!
+```
+</CodeGroup>
+
+### Subject Changes
+
+<Accordion title="AsyncSubject">
+- `_subscribe` method is now `protected` (was `public`)
+- No longer has its own `error` method implementation
+
+```ts
+import { AsyncSubject } from 'rxjs';
+
+const subject = new AsyncSubject();
+// subject._subscribe() // TypeScript error in v7
+```
+</Accordion>
+
+<Accordion title="BehaviorSubject">
+- `_subscribe` method is now `protected` (was `public`)
+- `value` is now a getter instead of readonly property
+- Cannot be forcibly set
+
+```ts
+import { BehaviorSubject } from 'rxjs';
+
+const subject = new BehaviorSubject(0);
+console.log(subject.value); // Still works
+// (subject as any).value = 1; // Won't work like it might have in edge cases
+```
+</Accordion>
+
+<Accordion title="ReplaySubject">
+- `_subscribe` method is now `protected` (was `public`)
+- `_getNow` method removed
+- No longer schedules emissions when a scheduler is provided
+
+<CodeGroup>
+```ts RxJS v6
+import { ReplaySubject, asapScheduler } from 'rxjs';
+
+const subject = new ReplaySubject(2, 3000, asapScheduler);
+// Emissions are scheduled
+```
+
+```ts RxJS v7
+import { ReplaySubject, asapScheduler } from 'rxjs';
+import { observeOn } from 'rxjs/operators';
+
+// Compose with observeOn instead
+const subject = new ReplaySubject(2, 3000).pipe(
+  observeOn(asapScheduler)
+);
+```
+</CodeGroup>
+</Accordion>
+
+## Operator Breaking Changes
+
+### Creation Operators
+
+<Accordion title="defer">
+<Warning>
+  `defer` no longer allows factories to return `void` or `undefined`. Must return a valid `ObservableInput`.
+</Warning>
+
+<CodeGroup>
+```ts Broken
+import { defer } from 'rxjs';
+
+const source$ = defer(() => {
+  console.log('side effect');
+  // Returns undefined - breaks in v7!
+});
+```
+
+```ts Fixed
+import { defer, EMPTY, of } from 'rxjs';
+
+const source$ = defer(() => {
+  console.log('side effect');
+  return EMPTY; // or of()
+});
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="fromEvent">
+<Warning>
+  Signatures changed - separate overloads for each target type. Passing options to incompatible targets now causes TypeScript errors.
+</Warning>
+
+```ts
+import { fromEvent } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click', {
+  once: true // Type-checked against DOM EventTarget
+});
+```
+</Accordion>
+
+<Accordion title="iif">
+<Warning>
+  `iif` no longer allows `undefined` as result arguments.
+</Warning>
+
+<CodeGroup>
+```ts Broken
+import { iif } from 'rxjs';
+
+const result$ = iif(
+  () => Math.random() > 0.5,
+  undefined, // Breaks in v7!
+  of('false')
+);
+```
+
+```ts Fixed  
+import { iif, EMPTY, of } from 'rxjs';
+
+const result$ = iif(
+  () => Math.random() > 0.5,
+  EMPTY,
+  of('false')
+);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="isObservable">
+<Warning>
+  No longer has a generic parameter. Returns `Observable<unknown>` - you must cast the result.
+</Warning>
+
+<CodeGroup>
+```ts RxJS v6
+import { isObservable, of } from 'rxjs';
+
+const value = of(1);
+if (isObservable<number>(value)) {
+  // value is Observable<number>
+}
+```
+
+```ts RxJS v7
+import { isObservable, of, Observable } from 'rxjs';
+
+const value = of(1);
+if (isObservable(value)) {
+  const typed = value as Observable<number>;
+}
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="pairs">
+<Warning>
+  `pairs` requires `Object.entries` polyfill for IE. Consider using `from(Object.entries(obj))` instead.
+</Warning>
+
+```ts
+import { from } from 'rxjs';
+
+const obj = { a: 1, b: 2, c: 3 };
+from(Object.entries(obj)).subscribe(console.log);
+```
+</Accordion>
+
+<Accordion title="race">
+<Warning>
+  `race` no longer subscribes to subsequent observables if a source synchronously errors or completes.
+</Warning>
+
+```ts
+import { race, of, throwError } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+race(
+  throwError(() => new Error('immediate')),
+  of(1).pipe(tap(() => console.log('This side effect won\'t run')))
+).subscribe();
+```
+</Accordion>
+
+### Pipeable Operators
+
+<Accordion title="Duration Selector Changes">
+<Warning>
+  The following operators now require their duration selectors to emit a **next notification**, not just complete:
+</Warning>
+
+- `audit` - duration must emit next
+- `debounce` - duration must emit next  
+- `throttle` - duration must emit next
+- `bufferToggle` - closing selector must emit next
+- `bufferWhen` - closing selector must emit next
+- `windowToggle` - closing selector must emit next
+- `delayWhen` - duration must emit value, not just complete
+- `sample` - notifier must emit next, not just complete
+
+<CodeGroup>
+```ts May Break in v7
+import { interval, audit, EMPTY } from 'rxjs';
+
+interval(100).pipe(
+  audit(() => EMPTY) // EMPTY just completes - won't trigger audit!
+).subscribe();
+```
+
+```ts Fixed
+import { interval, audit, of } from 'rxjs';
+import { delay } from 'rxjs/operators';
+
+interval(100).pipe(
+  audit(() => of(0).pipe(delay(50))) // Emits next
+).subscribe();
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="buffer">
+<Warning>
+  Multiple behavioral changes:
+</Warning>
+
+- Now subscribes to source before closing notifier (order reversed)
+- Final buffered values always emitted
+- Closing notifier completion no longer completes result
+
+<CodeGroup>
+```ts RxJS v6 Behavior
+import { interval, buffer } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const notifier$ = interval(1000).pipe(take(3));
+interval(100).pipe(buffer(notifier$)).subscribe();
+// Completes when notifier completes
+```
+
+```ts RxJS v7 - Use takeUntil
+import { interval, buffer, takeUntil, ignoreElements, endWith } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const notifier$ = interval(1000).pipe(take(3));
+interval(100).pipe(
+  buffer(notifier$),
+  takeUntil(notifier$.pipe(ignoreElements(), endWith(true)))
+).subscribe();
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="count">
+<Warning>
+  Predicate no longer receives source observable as third argument.
+</Warning>
+
+<CodeGroup>
+```ts RxJS v6
+import { of } from 'rxjs';
+import { count } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  count((value, index, source) => {
+    console.log(source); // Had access to source
+    return value > 1;
+  })
+);
+```
+
+```ts RxJS v7
+import { of } from 'rxjs';
+import { count } from 'rxjs/operators';
+
+const source = of(1, 2, 3);
+source.pipe(
+  count((value, index) => {
+    // Close over source if needed
+    console.log(source);
+    return value > 1;
+  })
+);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="defaultIfEmpty">
+<Warning>
+  `defaultIfEmpty` requires a value argument. No longer converts undefined to null.
+</Warning>
+
+<CodeGroup>
+```ts Broken
+import { EMPTY } from 'rxjs';
+import { defaultIfEmpty } from 'rxjs/operators';
+
+EMPTY.pipe(
+  defaultIfEmpty() // Error in v7!
+);
+```
+
+```ts Fixed
+import { EMPTY } from 'rxjs';
+import { defaultIfEmpty } from 'rxjs/operators';
+
+EMPTY.pipe(
+  defaultIfEmpty(null) // Explicit value required
+);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="finalize">
+<Warning>
+  Finalize callbacks now run in pipeline order (not reversed).
+</Warning>
+
+<CodeGroup>
+```ts RxJS v6
+import { of } from 'rxjs';
+import { finalize } from 'rxjs/operators';
+
+of(1).pipe(
+  finalize(() => console.log('1')),
+  finalize(() => console.log('2'))
+).subscribe();
+// Logs: "2" then "1" (reversed)
+```
+
+```ts RxJS v7
+import { of } from 'rxjs';
+import { finalize } from 'rxjs/operators';
+
+of(1).pipe(
+  finalize(() => console.log('1')),
+  finalize(() => console.log('2'))
+).subscribe();
+// Logs: "1" then "2" (pipeline order)
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="map">
+<Warning>
+  `thisArg` now defaults to `undefined` instead of `MapSubscriber`.
+</Warning>
+
+```ts
+import { of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// Only affects function (not arrow function) with 'this' reference
+of(1, 2, 3).pipe(
+  map(function(value) {
+    console.log(this); // undefined in v7, was MapSubscriber in v6
+    return value * 2;
+  })
+);
+```
+</Accordion>
+
+<Accordion title="mergeScan">
+<Warning>
+  `mergeScan` no longer emits inner state again upon completion.
+</Warning>
+
+```ts
+import { of } from 'rxjs';
+import { mergeScan } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  mergeScan((acc, value) => of(acc + value), 0)
+).subscribe(console.log);
+// v6: 1, 3, 6, 6 (duplicated final value)
+// v7: 1, 3, 6 (no duplicate)
+```
+</Accordion>
+
+<Accordion title="single">
+<Warning>
+  `single` now throws more specific errors. Check error handling logic.
+</Warning>
+
+```ts
+import { of, empty } from 'rxjs';
+import { single } from 'rxjs/operators';
+
+// Throws EmptyError if no values
+empty().pipe(single()).subscribe();
+
+// Throws SequenceError if multiple values
+of(1, 2, 3).pipe(single()).subscribe();
+
+// Throws NotFoundError if predicate never matches
+of(1, 2, 3).pipe(
+  single(x => x > 10)
+).subscribe();
+```
+</Accordion>
+
+<Accordion title="skipLast">
+<Warning>
+  `skipLast` no longer errors with negative numbers - returns source instead.
+</Warning>
+
+```ts
+import { of } from 'rxjs';
+import { skipLast } from 'rxjs/operators';
+
+// v6: throws error
+// v7: returns source unchanged
+of(1, 2, 3).pipe(
+  skipLast(-1)
+).subscribe(console.log); // 1, 2, 3
+```
+</Accordion>
+
+<Accordion title="take">
+<Warning>
+  `take` now throws runtime errors for negative or NaN arguments.
+</Warning>
+
+```ts
+import { of } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  take(-1) // Throws TypeError in v7
+).subscribe();
+
+of(1, 2, 3).pipe(
+  take(NaN) // Throws TypeError in v7  
+).subscribe();
+```
+</Accordion>
+
+<Accordion title="takeLast">
+<Warning>
+  `takeLast` throws TypeError for invalid arguments (no args or NaN).
+</Warning>
+
+```ts
+import { of } from 'rxjs';
+import { takeLast } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  takeLast() // Throws TypeError
+).subscribe();
+```
+</Accordion>
+
+<Accordion title="window">
+<Warning>
+  `windowBoundaries` no longer completes the result.
+</Warning>
+
+<CodeGroup>
+```ts Get v6 Behavior
+import { interval } from 'rxjs';
+import { window, endWith, skipLast, take } from 'rxjs/operators';
+
+const notifier$ = interval(1000).pipe(take(3));
+
+interval(100).pipe(
+  window(notifier$.pipe(endWith(true))),
+  skipLast(1)
+).subscribe();
+```
+
+```ts RxJS v7 Default
+import { interval } from 'rxjs';
+import { window, take } from 'rxjs/operators';
+
+const notifier$ = interval(1000).pipe(take(3));
+
+interval(100).pipe(
+  window(notifier$) // Doesn't complete with notifier
+).subscribe();
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="zip">
+<Warning>
+  Multiple changes to `zip` behavior:
+</Warning>
+
+- Zipping single array has different result
+- Iterables no longer consumed "as needed" (can lock up with infinite iterables)
+
+<CodeGroup>
+```ts May Lock Up in v7
+import { zip, of } from 'rxjs';
+
+function* infiniteGenerator() {
+  let i = 0;
+  while (true) yield i++;
+}
+
+// v7: Locks up trying to read entire iterable!
+zip(of(1, 2, 3), infiniteGenerator()).subscribe();
+```
+
+```ts Fixed
+import { of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+function* infiniteGenerator() {
+  let i = 0;
+  while (true) yield i++;
+}
+
+const iterator = infiniteGenerator();
+of(1, 2, 3).pipe(
+  map(value => [value, iterator.next().value])
+).subscribe();
+```
+</CodeGroup>
+</Accordion>
+
+## Ajax Module Changes
+
+<Warning>
+  **Breaking**: Ajax body serialization now uses default XHR behavior. Custom `Content-Type` headers no longer affect serialization.
+</Warning>
+
+### Body Serialization
+
+```ts
+import { ajax } from 'rxjs/ajax';
+
+// Automatically JSON serialized (objects)
+ajax({
+  url: '/api/data',
+  method: 'POST',
+  body: { name: 'John' } // Auto-serialized, Content-Type set
+}).subscribe();
+
+// Default handling (FormData, Blob, ArrayBuffer, etc.)
+ajax({
+  url: '/api/upload',
+  method: 'POST',
+  body: new FormData() // Uses XHR default handling
+}).subscribe();
+```
+
+### Type Changes
+
+<Warning>
+  For TypeScript users: Use `AjaxConfig` instead of `AjaxRequest` for ajax configuration.
+</Warning>
+
+```ts
+import { ajax, AjaxConfig } from 'rxjs/ajax';
+
+const config: AjaxConfig = {
+  url: '/api/data',
+  method: 'GET',
+  // AjaxConfig includes progressSubscriber and createXHR
+};
+
+ajax(config).subscribe();
+```
+
+### IE10 Support Dropped
+
+<Warning>
+  Ajax module no longer supports IE10 and lower.
+</Warning>
+
+## Testing Module Changes
+
+### New TestScheduler Feature
+
+```ts
+import { TestScheduler } from 'rxjs/testing';
+import { of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const scheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+
+scheduler.run(({ expectObservable }) => {
+  const source$ = of(1, 2, 3);
+  const result$ = source$.pipe(map(x => x * 2));
+  
+  // New toEqual() method for refactoring verification
+  expectObservable(result$).toEqual(
+    expectObservable(source$.pipe(map(x => x * 2)))
+  );
+});
+```
+
+## Error Handling Changes
+
+### Unhandled Errors
+
+<Warning>
+  Errors during subscription setup (after error/complete) now throw in their own call stack instead of using `console.warn`.
+</Warning>
+
+```ts
+import { config } from 'rxjs';
+
+// Restore v6 behavior if needed (not recommended)
+config.onUnhandledError = (err) => console.warn(err);
+```
+
+### Error Stack Properties
+
+<Warning>
+  RxJS errors now have proper `stack` properties. May affect test assertions using deep equality.
+</Warning>
+
+```ts
+import { throwError } from 'rxjs';
+
+throwError(() => new Error('test')).subscribe({
+  error(err) {
+    console.log(err.stack); // Proper stack trace in v7
+  }
+});
+```
+
+## Removed Features
+
+<Warning>
+The following features have been completely removed:
+</Warning>
+
+- Experimental `for await` support (use https://github.com/benlesh/rxjs-for-await)
+- `rxjs/Rx` import site (from rxjs-compat)
+- `Notification.createNext(undefined)` singleton behavior
+- `VirtualTimeScheduler.sortActions` static method (no longer public)
+
+## Migration Resources
+
+- [Migration Guide](/migration/v6-to-v7) - Step-by-step migration instructions
+- [Deprecations](/migration/deprecations) - Deprecated APIs with replacements
+- [API Reference](/api/overview) - Complete API documentation

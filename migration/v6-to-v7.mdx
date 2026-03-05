@@ -1,0 +1,331 @@
+---
+title: 'Migrating from v6 to v7'
+description: 'Comprehensive guide for upgrading your RxJS applications from version 6 to version 7'
+---
+
+# Migrating from RxJS v6 to v7
+
+RxJS v7 includes significant improvements to performance, bundle size, and type safety. This guide will help you migrate your application from RxJS v6 to v7.
+
+## Prerequisites
+
+<Warning>
+  **TypeScript Requirement**: RxJS v7 requires TypeScript 4.2 or higher. Update your TypeScript version before upgrading RxJS.
+</Warning>
+
+<Note>
+  The **rxjs-compat** package is not available for v7. You'll need to address all deprecations before upgrading.
+</Note>
+
+## Major Changes Overview
+
+### Type System Improvements
+
+RxJS v7 significantly improves TypeScript type inference. Most generic signatures have changed to provide better type inference:
+
+<CodeGroup>
+```ts RxJS v6
+import { combineLatest, of } from 'rxjs';
+
+// Explicit generics required
+const result$ = combineLatest<[number, string]>(
+  of(1),
+  of('hello')
+);
+```
+
+```ts RxJS v7
+import { combineLatest, of } from 'rxjs';
+
+// Generics inferred automatically
+const result$ = combineLatest([
+  of(1),
+  of('hello')
+]);
+```
+</CodeGroup>
+
+<Accordion title="Operators with changed generic signatures">
+The following operators have updated generic signatures. Do not explicitly pass generics - let TypeScript infer them:
+
+- `combineLatest`, `concat`, `merge`, `race`, `zip`
+- `forkJoin`, `partition`, `bindCallback`
+- `defer`, `iif`, `onErrorResumeNext`
+- `of`, `pairs`, `pipe`
+- All combination operators: `concatAll`, `mergeAll`, `switchAll`
+</Accordion>
+
+### Promise Conversion Changes
+
+The `toPromise()` method is deprecated in favor of two new, more explicit functions:
+
+<CodeGroup>
+```ts toPromise() - Deprecated
+import { interval } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const result = await interval(1000)
+  .pipe(take(10))
+  .toPromise(); // Returns T | undefined
+```
+
+```ts lastValueFrom() - Recommended
+import { interval, lastValueFrom } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const result = await lastValueFrom(
+  interval(1000).pipe(take(10))
+); // Returns T, rejects on empty
+```
+
+```ts firstValueFrom() - Recommended
+import { interval, firstValueFrom } from 'rxjs';
+
+const result = await firstValueFrom(
+  interval(1000)
+); // Returns first value immediately
+```
+</CodeGroup>
+
+<Warning>
+  **Breaking Change**: `toPromise()` now correctly returns `Promise<T | undefined>` instead of `Promise<T>`. This reflects the reality that observables can complete without emitting values.
+</Warning>
+
+<Accordion title="Using default values with firstValueFrom and lastValueFrom">
+```ts
+import { EMPTY, firstValueFrom } from 'rxjs';
+
+// Prevent EmptyError by providing a default value
+const result = await firstValueFrom(EMPTY, { defaultValue: 0 });
+console.log(result); // 0
+```
+</Accordion>
+
+### Subscription Changes
+
+The `Subscription.add()` method now returns `void` instead of a `Subscription`:
+
+<CodeGroup>
+```ts RxJS v6
+import { interval, Subscription } from 'rxjs';
+
+const subscription = new Subscription();
+const sub1 = subscription.add(interval(1000).subscribe());
+// sub1 could be used for removal
+```
+
+```ts RxJS v7
+import { interval, Subscription } from 'rxjs';
+
+const subscription = new Subscription();
+
+// add() returns void
+const teardown = () => console.log('cleanup');
+subscription.add(teardown);
+
+// Remove using the same function reference
+subscription.remove(teardown);
+```
+</CodeGroup>
+
+### Observable Internal Changes
+
+Several internal implementation details are no longer exposed:
+
+<Warning>
+  **Breaking Change**: The `lift` operator is no longer publicly exposed in TypeScript. Use the documented operator creation patterns instead.
+</Warning>
+
+<CodeGroup>
+```ts Old Pattern - Using lift
+import { Observable } from 'rxjs';
+
+function customOperator() {
+  return (source: Observable<any>) => {
+    return (source as any).lift(/* ... */);
+  };
+}
+```
+
+```ts New Pattern - Recommended
+import { Observable } from 'rxjs';
+
+function customOperator<T>() {
+  return (source: Observable<T>) => {
+    return new Observable(subscriber => {
+      const subscription = source.subscribe({
+        next(value) { subscriber.next(value); },
+        error(err) { subscriber.error(err); },
+        complete() { subscriber.complete(); }
+      });
+      return () => subscription.unsubscribe();
+    });
+  };
+}
+```
+</CodeGroup>
+
+## New Features
+
+### Animation Frames
+
+A new creation function for working with animation frames:
+
+```ts
+import { animationFrames } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+animationFrames().pipe(
+  map(({ elapsed, timestamp }) => ({
+    elapsed,
+    timestamp
+  }))
+).subscribe(console.log);
+```
+
+### Global Error Handling
+
+Configure global error handlers using the new `config` object:
+
+```ts
+import { config } from 'rxjs';
+
+// Handle unhandled errors
+config.onUnhandledError = (err) => {
+  console.error('Unhandled RxJS error:', err);
+};
+
+// Handle notifications after stopped
+config.onStoppedNotification = (notification) => {
+  console.warn('Notification after stopped:', notification);
+};
+```
+
+### Enhanced Input Types
+
+RxJS v7 expands `ObservableInput` to accept more types:
+
+```ts
+import { from } from 'rxjs';
+
+// AsyncIterable support
+async function* asyncGenerator() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+from(asyncGenerator()).subscribe(console.log);
+
+// ReadableStream support (from fetch, etc.)
+fetch('https://api.example.com/data')
+  .then(response => response.body)
+  .then(stream => from(stream!))
+  .then(obs => obs.subscribe(console.log));
+```
+
+### Improved Operators
+
+<Accordion title="timeout - Enhanced configuration">
+```ts
+import { of, timeout } from 'rxjs';
+import { delay } from 'rxjs/operators';
+
+// Timeout with absolute date
+of('data').pipe(
+  delay(5000),
+  timeout({
+    first: new Date(Date.now() + 1000),
+    with: () => of('timeout!')
+  })
+).subscribe(console.log);
+
+// Timeout between items
+of(1, 2, 3).pipe(
+  timeout({
+    each: 1000,
+    with: () => of('too slow!')
+  })
+).subscribe(console.log);
+```
+</Accordion>
+
+<Accordion title="share - Full configuration support">
+```ts
+import { interval, share, ReplaySubject } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+// Configure subject type and reset behavior
+const shared$ = interval(1000).pipe(
+  take(5),
+  share({
+    connector: () => new ReplaySubject(2),
+    resetOnError: true,
+    resetOnComplete: true,
+    resetOnRefCountZero: true
+  })
+);
+```
+</Accordion>
+
+### New Combination Operators
+
+To avoid naming conflicts with deprecated operators, new variants were added:
+
+```ts
+import { of } from 'rxjs';
+import { zipWith, mergeWith, concatWith, raceWith } from 'rxjs/operators';
+
+const source$ = of(1, 2, 3);
+const other$ = of('a', 'b', 'c');
+
+// New explicit naming
+source$.pipe(
+  zipWith(other$)
+).subscribe(console.log); // [1, 'a'], [2, 'b'], [3, 'c']
+```
+
+## Migration Checklist
+
+<Steps>
+  <Step title="Update TypeScript">
+    Ensure you're using TypeScript 4.2 or higher:
+    ```bash
+    npm install -D typescript@^4.2.0
+    ```
+  </Step>
+
+  <Step title="Remove Generic Type Arguments">
+    Remove explicit generic type arguments from operators like `combineLatest`, `merge`, `zip`, etc. Let TypeScript infer types automatically.
+  </Step>
+
+  <Step title="Replace toPromise()">
+    Replace all uses of `toPromise()` with `firstValueFrom()` or `lastValueFrom()`:
+    - Use `firstValueFrom()` when you want the first emitted value
+    - Use `lastValueFrom()` when you want the final emitted value
+  </Step>
+
+  <Step title="Update Subscription Handling">
+    If you relied on `Subscription.add()` returning a subscription, refactor to use the `remove()` method with the same teardown reference.
+  </Step>
+
+  <Step title="Address Custom Operators">
+    If you created custom operators using `lift`, refactor them to use the documented pattern with `new Observable()`.
+  </Step>
+
+  <Step title="Test Error Handling">
+    Review error handling logic - unhandled errors now throw in their own call stack instead of using `console.warn`.
+  </Step>
+
+  <Step title="Update Tests">
+    Error objects now have proper `stack` properties, which may affect deep equality checks in tests.
+  </Step>
+</Steps>
+
+## Next Steps
+
+For detailed information about specific changes:
+
+- [Breaking Changes](/migration/breaking-changes) - Complete list of breaking changes
+- [Deprecations](/migration/deprecations) - Deprecated APIs and migration paths
+- [Operator Reference](/operators/overview) - Updated operator documentation

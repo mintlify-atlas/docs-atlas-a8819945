@@ -1,0 +1,446 @@
+---
+title: 'from'
+description: 'Convert arrays, promises, iterables, or observables into an Observable'
+---
+
+# from
+
+Converts various data sources (arrays, promises, iterables, or observables) into an Observable.
+
+## Import
+
+```typescript
+import { from } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function from<T>(input: ObservableInput<T>): Observable<T>;
+
+// ObservableInput can be:
+// - Observable
+// - Promise
+// - Array
+// - Iterable
+// - AsyncIterable
+```
+
+## Parameters
+
+<ParamField path="input" type="ObservableInput<T>" required>
+  The input to convert to an Observable. Can be:
+  - **Array**: Emits each element sequentially
+  - **Promise**: Emits the resolved value, then completes (or errors)
+  - **Iterable**: Emits each value from the iterator
+  - **AsyncIterable**: Emits each value as it becomes available
+  - **Observable**: Returns the Observable as-is
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable that emits values from the input source.
+</ResponseField>
+
+## Description
+
+`from` is the universal conversion operator that turns almost anything into an Observable. It automatically detects the type of input and converts it appropriately.
+
+**Key characteristics:**
+- Synchronously emits array/iterable values
+- Asynchronously emits promise/async iterable values
+- Flattens one level (unlike `of` which emits the array as-is)
+- Errors if the promise rejects
+- Completes after emitting all values
+
+## Examples
+
+### Convert Array
+
+```typescript
+import { from } from 'rxjs';
+
+const array = [1, 2, 3, 4, 5];
+const observable$ = from(array);
+
+observable$.subscribe({
+  next: x => console.log(x),
+  complete: () => console.log('Complete!')
+});
+
+// Output:
+// 1
+// 2
+// 3
+// 4
+// 5
+// Complete!
+```
+
+### Convert Promise
+
+```typescript
+import { from } from 'rxjs';
+
+const promise = fetch('https://api.github.com/users/octocat')
+  .then(response => response.json());
+
+const observable$ = from(promise);
+
+observable$.subscribe({
+  next: user => console.log('User:', user),
+  error: err => console.error('Error:', err),
+  complete: () => console.log('Complete!')
+});
+```
+
+### Convert String (Iterable)
+
+```typescript
+import { from } from 'rxjs';
+
+const str = 'Hello';
+const observable$ = from(str);
+
+observable$.subscribe(char => console.log(char));
+
+// Output:
+// H
+// e
+// l
+// l
+// o
+```
+
+### Convert Map
+
+```typescript
+import { from } from 'rxjs';
+
+const map = new Map([
+  ['a', 1],
+  ['b', 2],
+  ['c', 3]
+]);
+
+const observable$ = from(map);
+
+observable$.subscribe(([key, value]) => {
+  console.log(`${key}: ${value}`);
+});
+
+// Output:
+// a: 1
+// b: 2
+// c: 3
+```
+
+## Common Use Cases
+
+### Convert Fetch to Observable
+
+```typescript
+import { from } from 'rxjs';
+import { map, catchError, retry } from 'rxjs/operators';
+import { of } from 'rxjs';
+
+function getUser(id: string) {
+  return from(
+    fetch(`/api/users/${id}`).then(r => r.json())
+  ).pipe(
+    retry(3),
+    catchError(error => {
+      console.error('Failed to fetch user:', error);
+      return of(null);
+    })
+  );
+}
+
+getUser('123').subscribe(user => {
+  console.log('User:', user);
+});
+```
+
+### Process Array Elements
+
+```typescript
+import { from } from 'rxjs';
+import { map, filter, take } from 'rxjs/operators';
+
+const users = [
+  { id: 1, name: 'Alice', age: 25 },
+  { id: 2, name: 'Bob', age: 30 },
+  { id: 3, name: 'Charlie', age: 35 }
+];
+
+from(users).pipe(
+  filter(user => user.age >= 30),
+  map(user => user.name),
+  take(2)
+).subscribe(name => console.log(name));
+
+// Output:
+// Bob
+// Charlie
+```
+
+### Async Iteration
+
+```typescript
+import { from } from 'rxjs';
+
+async function* asyncGenerator() {
+  yield await Promise.resolve(1);
+  yield await Promise.resolve(2);
+  yield await Promise.resolve(3);
+}
+
+from(asyncGenerator()).subscribe({
+  next: x => console.log('Value:', x),
+  complete: () => console.log('Done!')
+});
+
+// Output:
+// Value: 1
+// Value: 2
+// Value: 3
+// Done!
+```
+
+### Convert Generator
+
+```typescript
+import { from } from 'rxjs';
+
+function* numberGenerator() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+from(numberGenerator()).subscribe(x => console.log(x));
+
+// Output:
+// 1
+// 2
+// 3
+```
+
+### Chain Multiple Promises
+
+```typescript
+import { from } from 'rxjs';
+import { concatMap } from 'rxjs/operators';
+
+const promises = [
+  () => fetch('/api/user').then(r => r.json()),
+  () => fetch('/api/posts').then(r => r.json()),
+  () => fetch('/api/comments').then(r => r.json())
+];
+
+from(promises).pipe(
+  concatMap(promiseFn => from(promiseFn()))
+).subscribe({
+  next: data => console.log('Data:', data),
+  complete: () => console.log('All requests complete')
+});
+```
+
+## Comparison with `of`
+
+<CodeGroup>
+
+```typescript from (Flattens)
+import { from } from 'rxjs';
+
+from([1, 2, 3]).subscribe(x => console.log(x));
+
+// Output:
+// 1
+// 2
+// 3
+```
+
+```typescript of (Emits as-is)
+import { of } from 'rxjs';
+
+of([1, 2, 3]).subscribe(x => console.log(x));
+
+// Output:
+// [1, 2, 3]
+```
+
+</CodeGroup>
+
+## Working with Promises
+
+### Success Case
+
+```typescript
+import { from } from 'rxjs';
+
+const promise = Promise.resolve('Success!');
+
+from(promise).subscribe({
+  next: value => console.log('Value:', value),
+  error: err => console.error('Error:', err),
+  complete: () => console.log('Complete')
+});
+
+// Output:
+// Value: Success!
+// Complete
+```
+
+### Error Case
+
+```typescript
+import { from } from 'rxjs';
+import { catchError, of } from 'rxjs';
+
+const promise = Promise.reject(new Error('Failed!'));
+
+from(promise).pipe(
+  catchError(err => {
+    console.error('Caught:', err.message);
+    return of('Fallback value');
+  })
+).subscribe(value => console.log('Value:', value));
+
+// Output:
+// Caught: Failed!
+// Value: Fallback value
+```
+
+## Advanced Examples
+
+### Convert Observable-like Object
+
+```typescript
+import { from } from 'rxjs';
+
+const observableLike = {
+  subscribe(observer) {
+    observer.next(1);
+    observer.next(2);
+    observer.next(3);
+    observer.complete();
+    return { unsubscribe() {} };
+  }
+};
+
+from(observableLike).subscribe(x => console.log(x));
+
+// Output:
+// 1
+// 2
+// 3
+```
+
+### Convert Set
+
+```typescript
+import { from } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const uniqueNumbers = new Set([1, 2, 3, 2, 1, 4]);
+
+from(uniqueNumbers).pipe(
+  map(x => x * 2)
+).subscribe(x => console.log(x));
+
+// Output:
+// 2
+// 4
+// 6
+// 8
+```
+
+### File Reading with Promises
+
+```typescript
+import { from } from 'rxjs';
+import { mergeMap, toArray } from 'rxjs/operators';
+import { promises as fs } from 'fs';
+
+const files = ['file1.txt', 'file2.txt', 'file3.txt'];
+
+from(files).pipe(
+  mergeMap(filename => 
+    from(fs.readFile(filename, 'utf-8'))
+  ),
+  toArray()
+).subscribe({
+  next: contents => console.log('All file contents:', contents),
+  error: err => console.error('Error reading files:', err)
+});
+```
+
+## Important Notes
+
+<Note>
+  When converting a Promise, the Observable will emit the resolved value once and then complete. Each subscription will trigger a new subscription to the Promise.
+</Note>
+
+<Warning>
+  Converting already-resolved Promises will still emit asynchronously (on the next microtask). If you need synchronous emission, use `of()`.
+</Warning>
+
+<Tip>
+  Use `from()` for arrays/iterables when you want to process each element. Use `of()` when you want to emit the collection as a single value.
+</Tip>
+
+## Type Safety
+
+```typescript
+import { from } from 'rxjs';
+
+interface User {
+  id: number;
+  name: string;
+}
+
+const users: User[] = [
+  { id: 1, name: 'Alice' },
+  { id: 2, name: 'Bob' }
+];
+
+// Type is Observable<User>
+const users$ = from(users);
+
+users$.subscribe(user => {
+  console.log(user.name); // TypeScript knows user has name property
+});
+```
+
+## Performance
+
+`from` iterates through the source synchronously for arrays and iterables, which means:
+
+```typescript
+import { from } from 'rxjs';
+
+from([1, 2, 3]).subscribe(x => console.log(x));
+console.log('After subscription');
+
+// Output:
+// 1
+// 2
+// 3
+// After subscription
+```
+
+For asynchronous sources (Promises, AsyncIterables), emission happens asynchronously.
+
+## Related Operators
+
+- **[of](/api/creation/of)** - Emit values as arguments (doesn't flatten)
+- **[fromEvent](/api/creation/fromEvent)** - Create from DOM events
+- **[defer](/api/creation/defer)** - Lazy Observable creation
+- **[ajax](/api/creation/ajax)** - Create from AJAX requests
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/from)
+- [Array.from() MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/from)

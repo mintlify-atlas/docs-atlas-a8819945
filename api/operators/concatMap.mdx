@@ -1,0 +1,264 @@
+---
+title: concatMap
+description: Projects each source value to an Observable and merges them sequentially
+---
+
+## Overview
+
+Projects each source value to an Observable (the "inner" Observable) and flattens those inner Observables sequentially. Unlike `mergeMap`, `concatMap` waits for each inner Observable to complete before subscribing to the next one, maintaining strict order.
+
+<Info>
+  `concatMap` is equivalent to `mergeMap` with a concurrency of 1. It ensures that inner Observables are processed one at a time, in order.
+</Info>
+
+## Type Signature
+
+```typescript
+function concatMap<T, O extends ObservableInput<any>>(
+  project: (value: T, index: number) => O
+): OperatorFunction<T, ObservedValueOf<O>>
+```
+
+## Parameters
+
+<ParamField path="project" type="(value: T, index: number) => O" required>
+  A function that maps each source value to an Observable (or Promise, Array, etc.). The function receives:
+  - `value`: The emitted value from the source
+  - `index`: The zero-based index of the emission
+  
+  Must return an ObservableInput that will be flattened into the output.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, ObservedValueOf<O>>">
+  A function that returns an Observable that emits values from each projected inner Observable sequentially, waiting for each to complete before moving to the next.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Sequential API Calls
+
+<CodeGroup>
+```typescript Simple Sequential Mapping
+import { fromEvent, concatMap, interval, take } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+
+// For each click, emit 0-3 sequentially over 4 seconds
+const result = clicks.pipe(
+  concatMap(() => interval(1000).pipe(take(4)))
+);
+
+result.subscribe(x => console.log(x));
+// Click 1: 0 (1s) -> 1 (2s) -> 2 (3s) -> 3 (4s)
+// Click 2 (even if during click 1): waits for click 1 to finish
+//         then: 0 (1s) -> 1 (2s) -> 2 (3s) -> 3 (4s)
+```
+
+```typescript With Index
+import { of, concatMap, timer, map } from 'rxjs';
+
+const source = of('A', 'B', 'C');
+
+const result = source.pipe(
+  concatMap((value, index) => 
+    timer(1000).pipe(
+      map(() => `${value} at index ${index}`)
+    )
+  )
+);
+
+result.subscribe(x => console.log(x));
+// After 1s: "A at index 0"
+// After 2s: "B at index 1"
+// After 3s: "C at index 2"
+```
+</CodeGroup>
+
+### Sequential HTTP Requests
+
+```typescript
+import { from, concatMap, delay } from 'rxjs';
+
+interface User {
+  id: number;
+  name: string;
+}
+
+const userIds = [1, 2, 3, 4, 5];
+
+// Fetch users one at a time, in order
+from(userIds).pipe(
+  concatMap(id => 
+    fetch(`/api/users/${id}`)
+      .then(res => res.json())
+  )
+).subscribe(
+  user => console.log('Fetched:', user),
+  err => console.error('Error:', err),
+  () => console.log('All users fetched')
+);
+
+// Ensures users are fetched in order: 1, then 2, then 3, etc.
+```
+
+### Order-Dependent Operations
+
+```typescript
+import { from, concatMap, of, delay } from 'rxjs';
+
+interface Task {
+  id: number;
+  action: string;
+  duration: number;
+}
+
+const tasks: Task[] = [
+  { id: 1, action: 'init', duration: 1000 },
+  { id: 2, action: 'process', duration: 2000 },
+  { id: 3, action: 'cleanup', duration: 500 }
+];
+
+from(tasks).pipe(
+  concatMap(task => {
+    console.log(`Starting: ${task.action}`);
+    return of(task).pipe(
+      delay(task.duration),
+      map(t => {
+        console.log(`Completed: ${t.action}`);
+        return t;
+      })
+    );
+  })
+).subscribe({
+  next: task => console.log(`✓ ${task.action}`),
+  complete: () => console.log('All tasks completed in order')
+});
+```
+
+## Marble Diagram
+
+```
+Source:     --1-------2-------3-------|
+Project(1):   a-b-c|
+Project(2):           d-e-f|
+Project(3):                   g-h-i|
+Result:     --a-b-c---d-e-f---g-h-i---|
+```
+
+Each inner Observable completes before the next one starts.
+
+### Comparison with mergeMap
+
+```
+concatMap:  --1---2---3---|
+              a-b|d-e|f-g|
+            --a-b-d-e-f-g-|
+
+mergeMap:   --1---2---3---|
+              a-b|d-e|f-g|
+            --a-b-d-e-f-g-| (concurrent)
+                d-e f-g
+```
+
+## Common Use Cases
+
+1. **Sequential API Requests**: When order matters or rate limiting is required
+2. **Dependent Operations**: When each operation depends on the previous one completing
+3. **Database Transactions**: Ensure operations execute in order
+4. **File Processing**: Process files sequentially to avoid conflicts
+5. **State Machines**: Execute state transitions in strict order
+6. **Animation Sequences**: Chain animations that must run one after another
+
+<Warning>
+  If source values arrive faster than inner Observables can complete, `concatMap` will queue them. This can lead to memory issues with long-running inner Observables and fast sources.
+</Warning>
+
+## Advanced Example: Form Submission Pipeline
+
+```typescript
+import { fromEvent, concatMap, from, tap, catchError, of } from 'rxjs';
+
+interface FormData {
+  id: string;
+  data: any;
+  timestamp: number;
+}
+
+const submitButton = document.getElementById('submit');
+const formSubmissions = fromEvent(submitButton, 'click');
+
+const submissionPipeline = formSubmissions.pipe(
+  map(() => ({
+    id: crypto.randomUUID(),
+    data: getFormData(),
+    timestamp: Date.now()
+  })),
+  concatMap((formData: FormData) => {
+    console.log('Processing submission:', formData.id);
+    
+    return from(
+      // Validate
+      validateForm(formData.data)
+        .then(() => {
+          console.log('Validated:', formData.id);
+          // Save to database
+          return saveToDatabase(formData);
+        })
+        .then(result => {
+          console.log('Saved:', formData.id);
+          // Send confirmation
+          return sendConfirmation(formData.id);
+        })
+        .then(() => ({
+          success: true,
+          id: formData.id
+        }))
+    ).pipe(
+      catchError(error => {
+        console.error('Submission failed:', formData.id, error);
+        return of({ success: false, id: formData.id, error });
+      })
+    );
+  })
+);
+
+submissionPipeline.subscribe(result => {
+  if (result.success) {
+    showSuccess(`Submission ${result.id} completed`);
+  } else {
+    showError(`Submission ${result.id} failed: ${result.error}`);
+  }
+});
+
+// Even if user clicks submit rapidly, each submission
+// completes fully before the next one starts
+```
+
+## Performance Considerations
+
+<Tip>
+  Use `concatMap` when order is critical. If order doesn't matter and you want concurrency, use `mergeMap`. If you want to cancel previous operations, use `switchMap`.
+</Tip>
+
+### When to Use concatMap
+
+- ✅ Order of execution must be preserved
+- ✅ Operations should not overlap
+- ✅ You need to process a queue of operations
+- ✅ Rate limiting is required
+
+### When NOT to Use concatMap
+
+- ❌ Order doesn't matter and you want better performance → use `mergeMap`
+- ❌ Only the latest result matters → use `switchMap`
+- ❌ Operations are independent and can run in parallel → use `mergeMap`
+
+## Related Operators
+
+- **[mergeMap](/api/operators/mergemap)** - Concurrent flattening without order guarantee
+- **[switchMap](/api/operators/switchmap)** - Cancels previous inner Observable when new value arrives
+- **[exhaustMap](/api/operators/exhaustmap)** - Ignores new values while inner Observable is active
+- **[concatAll](/api/operators/concatall)** - Flattens higher-order Observable sequentially
+- **[concat](/api/operators/concat)** - Concatenates multiple Observables

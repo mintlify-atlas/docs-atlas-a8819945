@@ -1,0 +1,50 @@
+---
+title: takeUntil
+description: Emits values until another Observable emits
+---
+
+## Overview
+
+Emits the values emitted by the source Observable until a `notifier` Observable emits a value.
+
+<Note>
+`takeUntil` subscribes and begins mirroring the source Observable. It also monitors a second Observable that you provide. If the notifier emits a value, the output Observable stops mirroring the source Observable and completes.
+</Note>
+
+## Type Signature
+
+```typescript
+function takeUntil<T>(notifier: ObservableInput<any>): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="notifier" type="ObservableInput<any>" required>
+  The ObservableInput whose first emitted value will cause the output Observable to stop emitting values from the source Observable.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits the values from the source Observable until notifier emits its first value.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { interval, fromEvent, takeUntil } from 'rxjs';
+
+const source = interval(1000);
+const clicks = fromEvent(document, 'click');
+const result = source.pipe(takeUntil(clicks));
+
+result.subscribe(x => console.log(x));
+// Emits until first click
+```
+
+## Related Operators
+
+- **[take](/api/operators/take)** - Takes first N values
+- **[takeLast](/api/operators/takeLast)** - Takes last N values
+- **[takeWhile](/api/operators/takeWhile)** - Takes while condition is true
+- **[skipUntil](/api/operators/skipUntil)** - Skips until another Observable emits

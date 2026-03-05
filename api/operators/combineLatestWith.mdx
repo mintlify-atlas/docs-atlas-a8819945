@@ -1,0 +1,306 @@
+---
+title: combineLatestWith
+description: Combines the source Observable with other Observables, emitting arrays of latest values whenever any Observable emits.
+---
+
+## Overview
+
+`combineLatestWith` creates an Observable that combines the latest values from the source Observable and all provided Observables. Once all Observables emit at least one value, every subsequent emission from any Observable triggers a new array emission containing the latest values from all sources.
+
+<Tip>
+  This is perfect for reactive form validation, where you need to recalculate validity whenever any field changes.
+</Tip>
+
+## Type Signature
+
+```typescript
+export function combineLatestWith<T, A extends readonly unknown[]>(
+  ...otherSources: [...ObservableInputTuple<A>]
+): OperatorFunction<T, Cons<T, A>>
+```
+
+## Parameters
+
+<ParamField path="otherSources" type="ObservableInputTuple<A>" required>
+  One or more Observable sources to combine with the source Observable. Each emission will be combined with the latest values from all other sources.
+</ParamField>
+
+## Returns
+
+`OperatorFunction<T, Cons<T, A>>` - An operator function that returns an Observable emitting arrays containing the latest value from the source Observable followed by the latest values from all provided Observables.
+
+## Usage Examples
+
+### Basic Example: Combining Two Input Streams
+
+<CodeGroup>
+```typescript Simple Combination
+import { fromEvent, combineLatestWith, map } from 'rxjs';
+
+const input1 = document.createElement('input');
+const input2 = document.createElement('input');
+document.body.appendChild(input1);
+document.body.appendChild(input2);
+
+const input1Changes$ = fromEvent(input1, 'input');
+const input2Changes$ = fromEvent(input2, 'input');
+
+input1Changes$.pipe(
+  combineLatestWith(input2Changes$),
+  map(([e1, e2]) => {
+    const val1 = (e1.target as HTMLInputElement).value;
+    const val2 = (e2.target as HTMLInputElement).value;
+    return `${val1} - ${val2}`;
+  })
+).subscribe(x => console.log(x));
+// Output: "hello - world" (updates whenever either input changes)
+```
+
+```typescript With Multiple Sources
+import { interval, combineLatestWith, map } from 'rxjs';
+
+const timer1$ = interval(1000);
+const timer2$ = interval(1500);
+const timer3$ = interval(500);
+
+timer1$.pipe(
+  combineLatestWith(timer2$, timer3$),
+  map(([t1, t2, t3]) => ({ timer1: t1, timer2: t2, timer3: t3 }))
+).subscribe(timers => console.log(timers));
+// Output: { timer1: 0, timer2: 0, timer3: 1 }
+//         { timer1: 0, timer2: 0, timer3: 2 }
+//         { timer1: 1, timer2: 0, timer3: 3 }
+```
+</CodeGroup>
+
+### Real-World Example: Reactive Form Validation
+
+```typescript
+import { fromEvent, map, combineLatestWith, startWith } from 'rxjs';
+
+interface FormData {
+  username: string;
+  email: string;
+  password: string;
+  isValid: boolean;
+}
+
+const usernameInput = document.getElementById('username') as HTMLInputElement;
+const emailInput = document.getElementById('email') as HTMLInputElement;
+const passwordInput = document.getElementById('password') as HTMLInputElement;
+
+const username$ = fromEvent(usernameInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('')
+);
+
+const email$ = fromEvent(emailInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('')
+);
+
+const password$ = fromEvent(passwordInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('')
+);
+
+username$.pipe(
+  combineLatestWith(email$, password$),
+  map(([username, email, password]) => ({
+    username,
+    email,
+    password,
+    isValid: username.length >= 3 && 
+             email.includes('@') && 
+             password.length >= 8
+  }))
+).subscribe((formData: FormData) => {
+  console.log('Form state:', formData);
+  const submitBtn = document.getElementById('submit') as HTMLButtonElement;
+  submitBtn.disabled = !formData.isValid;
+});
+```
+
+### Price Calculator with Tax and Discount
+
+```typescript
+import { BehaviorSubject, combineLatestWith, map } from 'rxjs';
+
+const basePrice$ = new BehaviorSubject(100);
+const taxRate$ = new BehaviorSubject(0.08);
+const discount$ = new BehaviorSubject(0);
+
+basePrice$.pipe(
+  combineLatestWith(taxRate$, discount$),
+  map(([price, tax, discount]) => {
+    const afterDiscount = price - (price * discount);
+    const total = afterDiscount + (afterDiscount * tax);
+    return {
+      basePrice: price,
+      discount: discount * 100 + '%',
+      tax: tax * 100 + '%',
+      total: total.toFixed(2)
+    };
+  })
+).subscribe(pricing => console.log('Final price:', pricing));
+
+// Update values
+basePrice$.next(150);
+// Output: Final price: { basePrice: 150, discount: '0%', tax: '8%', total: '162.00' }
+
+discount$.next(0.1);
+// Output: Final price: { basePrice: 150, discount: '10%', tax: '8%', total: '145.80' }
+```
+
+### Multi-Source Dashboard Data
+
+```typescript
+import { interval, map, combineLatestWith } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface DashboardData {
+  users: number;
+  revenue: number;
+  activeOrders: number;
+  serverStatus: string;
+}
+
+const userCount$ = interval(5000).pipe(
+  map(() => ajax.getJSON<number>('/api/users/count'))
+);
+
+const revenue$ = interval(10000).pipe(
+  map(() => ajax.getJSON<number>('/api/revenue/total'))
+);
+
+const orders$ = interval(3000).pipe(
+  map(() => ajax.getJSON<number>('/api/orders/active'))
+);
+
+const serverStatus$ = interval(2000).pipe(
+  map(() => ajax.getJSON<string>('/api/server/status'))
+);
+
+userCount$.pipe(
+  combineLatestWith(revenue$, orders$, serverStatus$),
+  map(([users, revenue, orders, status]) => ({
+    users,
+    revenue,
+    activeOrders: orders,
+    serverStatus: status
+  }))
+).subscribe((dashboard: DashboardData) => {
+  updateDashboardUI(dashboard);
+});
+```
+
+## Practical Scenarios
+
+<Note>
+  All source Observables must emit at least once before `combineLatestWith` emits its first value. Use `startWith()` if you need immediate emissions.
+</Note>
+
+### Scenario 1: Coordinate-Based Calculations
+
+```typescript
+import { fromEvent, map, combineLatestWith } from 'rxjs';
+
+const mouseMove$ = fromEvent(document, 'mousemove');
+const mouseClick$ = fromEvent(document, 'click');
+
+mouseMove$.pipe(
+  map(e => ({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY })),
+  combineLatestWith(
+    mouseClick$.pipe(
+      map(e => ({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY }))
+    )
+  ),
+  map(([currentPos, lastClick]) => {
+    const distance = Math.sqrt(
+      Math.pow(currentPos.x - lastClick.x, 2) +
+      Math.pow(currentPos.y - lastClick.y, 2)
+    );
+    return { currentPos, lastClick, distance };
+  })
+).subscribe(data => {
+  console.log(`Distance from last click: ${data.distance}px`);
+});
+```
+
+### Scenario 2: Multi-Filter Data Grid
+
+```typescript
+import { BehaviorSubject, combineLatestWith, map } from 'rxjs';
+
+interface User {
+  name: string;
+  age: number;
+  department: string;
+}
+
+const users: User[] = [
+  { name: 'Alice', age: 30, department: 'Engineering' },
+  { name: 'Bob', age: 25, department: 'Marketing' },
+  { name: 'Charlie', age: 35, department: 'Engineering' }
+];
+
+const searchTerm$ = new BehaviorSubject('');
+const minAge$ = new BehaviorSubject(0);
+const department$ = new BehaviorSubject('All');
+
+const users$ = new BehaviorSubject(users);
+
+users$.pipe(
+  combineLatestWith(searchTerm$, minAge$, department$),
+  map(([users, search, minAge, dept]) => 
+    users.filter(user => 
+      user.name.toLowerCase().includes(search.toLowerCase()) &&
+      user.age >= minAge &&
+      (dept === 'All' || user.department === dept)
+    )
+  )
+).subscribe(filteredUsers => {
+  console.log('Filtered users:', filteredUsers);
+});
+
+// Apply filters
+searchTerm$.next('a');
+minAge$.next(28);
+// Output: Filtered users: [{ name: 'Alice', age: 30, department: 'Engineering' }]
+```
+
+## Behavior Details
+
+### Emission Timing
+
+- First emission occurs only after ALL sources (including the source Observable) have emitted at least once
+- Subsequent emissions occur whenever ANY source emits
+- The order in the output array is: `[sourceValue, ...otherSourcesValues]`
+
+### Completion and Error Handling
+
+<Warning>
+  If ANY source Observable errors, the resulting Observable will error immediately. If you need error handling, use `catchError` on individual sources before combining.
+</Warning>
+
+```typescript
+import { of, throwError, combineLatestWith, catchError } from 'rxjs';
+
+const source1$ = of(1, 2, 3);
+const source2$ = throwError(() => new Error('Failed')).pipe(
+  catchError(err => of('Error handled'))
+);
+
+source1$.pipe(
+  combineLatestWith(source2$)
+).subscribe(console.log);
+// Output: [3, 'Error handled']
+```
+
+## Related Operators
+
+- [`combineLatest`](/api/operators/combineLatest) - Static creation operator for combining multiple Observables
+- [`combineLatestAll`](/api/operators/combineLatestAll) - Flattens a higher-order Observable using combineLatest
+- [`withLatestFrom`](/api/operators/withLatestFrom) - Similar but only emits when the source emits
+- [`zip`](/api/operators/zip) - Combines values by index instead of latest values
+- [`merge`](/api/operators/merge) - Emits all values from multiple sources without combining

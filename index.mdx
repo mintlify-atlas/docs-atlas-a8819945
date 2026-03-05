@@ -1,97 +1,147 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "RxJS: Reactive Extensions for JavaScript"
+description: "A powerful library for composing asynchronous and event-based programs using observable sequences"
 ---
 
-## Setting up
+<div style={{textAlign: 'center', padding: '3rem 0'}}>
+  <h1 style={{fontSize: '3rem', fontWeight: '700', marginBottom: '1rem', color: '#d6138d'}}>
+    RxJS
+  </h1>
+  <p style={{fontSize: '1.25rem', color: '#2f3e4e', maxWidth: '42rem', margin: '0 auto 2rem'}}>
+    Think of RxJS as Lodash for events. Compose asynchronous and event-based programs using observable sequences with a powerful suite of operators.
+  </p>
+</div>
 
-Get your documentation site up and running in minutes.
+## Get Started
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+Start building reactive applications with RxJS in minutes.
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
+<CardGroup cols={2}>
   <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
+    title="Installation"
+    icon="download"
+    href="/installation"
   >
-    Edit your docs locally and preview them in real time.
+    Install RxJS using npm, yarn, or pnpm
   </Card>
   <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
   >
-    Customize the design and colors of your site to match your brand.
+    Create your first Observable in under 5 minutes
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
+</CardGroup>
+
+## Core Concepts
+
+Master the fundamental building blocks of reactive programming.
+
+<CardGroup cols={3}>
+  <Card
+    title="Observable"
+    icon="wave-pulse"
+    href="/concepts/observable"
   >
-    Organize your docs to help users find what they need and succeed with your product.
+    Invokable collections of future values or events
   </Card>
   <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
+    title="Observer"
+    icon="eye"
+    href="/concepts/observer"
   >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+    Callbacks that listen to Observable values
   </Card>
   <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
+    title="Operators"
+    icon="filter"
+    href="/concepts/operators"
   >
-    Add sample code to demonstrate how to use your product.
+    Pure functions for transforming sequences
   </Card>
   <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
+    title="Subject"
+    icon="tower-broadcast"
+    href="/concepts/subject"
   >
-    Display images and other media.
+    Multicast values to multiple Observers
   </Card>
   <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
+    title="Subscription"
+    icon="link"
+    href="/concepts/subscription"
   >
-    Write once and reuse across your docs.
+    Manage Observable execution lifecycle
   </Card>
-</Columns>
+  <Card
+    title="Scheduler"
+    icon="clock"
+    href="/concepts/scheduler"
+  >
+    Control concurrency and timing
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Powerful Operators
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Transform, filter, and combine streams with 100+ operators.
+
+<CardGroup cols={2}>
+  <Card
+    title="Creation Operators"
+    icon="plus"
+    href="/api/overview"
+  >
+    Create Observables from events, promises, arrays, and more
+  </Card>
+  <Card
+    title="Transformation Operators"
+    icon="wand-magic-sparkles"
+    href="/api/operators/map"
+  >
+    Transform emitted values with map, scan, buffer, and switchMap
+  </Card>
+  <Card
+    title="Filtering Operators"
+    icon="filter"
+    href="/api/operators/filter"
+  >
+    Select specific values with filter, take, debounce, and distinct
+  </Card>
+  <Card
+    title="Combination Operators"
+    icon="code-merge"
+    href="/api/operators/combineLatestWith"
+  >
+    Combine multiple streams with merge, concat, and zip
+  </Card>
+</CardGroup>
+
+## Why RxJS?
+
+<CardGroup cols={2}>
+  <Card
+    title="Composable"
+    icon="diagram-project"
+  >
+    Chain operators to build complex async logic from simple, reusable pieces
+  </Card>
+  <Card
+    title="Powerful Error Handling"
+    icon="shield-check"
+  >
+    Gracefully handle errors with retry, catchError, and fallback strategies
+  </Card>
+  <Card
+    title="Cancellation Built-in"
+    icon="circle-stop"
+  >
+    Cancel async operations cleanly with unsubscribe
+  </Card>
+  <Card
+    title="Tree-shakeable"
+    icon="tree"
+  >
+    Modern modular architecture keeps your bundle size minimal
+  </Card>
+</CardGroup>

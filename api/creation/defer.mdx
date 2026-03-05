@@ -1,0 +1,356 @@
+---
+title: 'defer'
+description: 'Creates an Observable lazily, only when subscribed'
+---
+
+# defer
+
+Creates an Observable that, on subscribe, calls an Observable factory to make an Observable for each new Observer.
+
+## Import
+
+```typescript
+import { defer } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function defer<R extends ObservableInput<any>>(
+  observableFactory: () => R
+): Observable<ObservedValueOf<R>>;
+```
+
+## Parameters
+
+<ParamField path="observableFactory" type="() => ObservableInput" required>
+  A function that returns an Observable or any ObservableInput (Promise, Array, Iterable, etc.). Called for each subscription.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable whose Observers' subscriptions trigger an invocation of the given Observable factory function.
+</ResponseField>
+
+## Description
+
+`defer` allows you to create an Observable only when an Observer subscribes. It waits until subscription time, then calls the provided factory function to generate a new Observable.
+
+**Key characteristics:**
+- Factory function is called **for each subscription**
+- Creates a fresh Observable for each subscriber
+- Perfect for lazy evaluation
+- Can return different Observables based on runtime conditions
+- Exceptions in factory are caught and emitted as errors
+
+## Examples
+
+### Random Observable Selection
+
+```typescript
+import { defer, fromEvent, interval } from 'rxjs';
+
+const clicksOrInterval = defer(() => {
+  return Math.random() > 0.5
+    ? fromEvent(document, 'click')
+    : interval(1000);
+});
+
+clicksOrInterval.subscribe(x => console.log(x));
+
+// Each subscription randomly picks clicks or interval
+```
+
+### Lazy Promise Creation
+
+```typescript
+import { defer, of } from 'rxjs';
+
+// BAD: Promise executes immediately
+const eagerPromise = from(fetch('/api/data'));
+
+// Promise starts executing NOW, even before subscription
+
+// GOOD: Promise only executes on subscription
+const lazyPromise = defer(() => fetch('/api/data'));
+
+// Promise doesn't start until subscription
+lazyPromise.subscribe(response => {
+  console.log('Response:', response);
+});
+```
+
+### Generate Fresh Values
+
+```typescript
+import { defer } from 'rxjs';
+
+const timestamp$ = defer(() => of(Date.now()));
+
+// Each subscription gets a new timestamp
+timestamp$.subscribe(t => console.log('First:', t));
+
+setTimeout(() => {
+  timestamp$.subscribe(t => console.log('Second:', t));
+}, 1000);
+
+// Output:
+// First: 1634567890123
+// Second: 1634567891234  (different value)
+```
+
+## Common Use Cases
+
+### Conditional Observable Creation
+
+```typescript
+import { defer, of, throwError } from 'rxjs';
+
+function createObservable(useCache: boolean) {
+  return defer(() => {
+    if (useCache && cache.has('data')) {
+      return of(cache.get('data'));
+    }
+    if (!navigator.onLine) {
+      return throwError(() => new Error('Offline'));
+    }
+    return ajax.getJSON('/api/data');
+  });
+}
+
+const data$ = createObservable(true);
+data$.subscribe(data => console.log('Data:', data));
+```
+
+### Lazy Authentication
+
+```typescript
+import { defer, of, throwError } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+
+function requireAuth() {
+  return defer(() => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      return throwError(() => new Error('Not authenticated'));
+    }
+    return of(token);
+  });
+}
+
+const protectedData$ = requireAuth().pipe(
+  switchMap(token => 
+    ajax.getJSON('/api/protected', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  )
+);
+
+protectedData$.subscribe(
+  data => console.log('Protected data:', data),
+  err => console.error('Auth failed:', err)
+);
+```
+
+### Retry with Backoff
+
+```typescript
+import { defer, throwError, timer } from 'rxjs';
+import { mergeMap, retryWhen, tap } from 'rxjs/operators';
+
+let attempt = 0;
+
+const unstableRequest$ = defer(() => {
+  attempt++;
+  console.log(`Attempt ${attempt}`);
+  
+  if (attempt < 3) {
+    return throwError(() => new Error('Failed'));
+  }
+  return of('Success!');
+});
+
+unstableRequest$.pipe(
+  retryWhen(errors => errors.pipe(
+    mergeMap((err, i) => {
+      const retryDelay = Math.pow(2, i) * 1000;
+      console.log(`Retrying in ${retryDelay}ms...`);
+      return timer(retryDelay);
+    })
+  ))
+).subscribe(result => console.log(result));
+```
+
+### Database Transaction
+
+```typescript
+import { defer, from } from 'rxjs';
+import { tap, finalize } from 'rxjs/operators';
+
+function withTransaction<T>(operation: () => Promise<T>) {
+  return defer(async () => {
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      const result = await operation();
+      await connection.commit();
+      return result;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  });
+}
+
+const updateUser$ = withTransaction(() => 
+  db.query('UPDATE users SET name = ? WHERE id = ?', ['John', 1])
+);
+
+updateUser$.subscribe(
+  result => console.log('Updated:', result),
+  err => console.error('Transaction failed:', err)
+);
+```
+
+### Resource Management
+
+```typescript
+import { defer, fromEvent, merge, NEVER } from 'rxjs';
+import { takeUntil, finalize } from 'rxjs/operators';
+
+function createWebSocket(url: string) {
+  return defer(() => {
+    console.log('Opening WebSocket connection');
+    const socket = new WebSocket(url);
+    
+    const message$ = fromEvent(socket, 'message');
+    const close$ = fromEvent(socket, 'close');
+    
+    return message$.pipe(
+      takeUntil(close$),
+      finalize(() => {
+        console.log('Closing WebSocket connection');
+        socket.close();
+      })
+    );
+  });
+}
+
+const ws$ = createWebSocket('wss://example.com');
+
+// Connection opens on subscription
+const sub = ws$.subscribe(msg => console.log('Message:', msg));
+
+// Connection closes on unsubscription
+setTimeout(() => sub.unsubscribe(), 5000);
+```
+
+## Defer vs Direct Observable
+
+<CodeGroup>
+
+```typescript Without defer (Immediate)
+import { of } from 'rxjs';
+
+let value = 1;
+
+// Observable created with current value (1)
+const immediate$ = of(value);
+
+value = 2;
+
+// Still emits 1, not 2
+immediate$.subscribe(x => console.log(x)); // 1
+immediate$.subscribe(x => console.log(x)); // 1
+```
+
+```typescript With defer (Lazy)
+import { defer, of } from 'rxjs';
+
+let value = 1;
+
+// Observable factory captures value at subscription time
+const lazy$ = defer(() => of(value));
+
+value = 2;
+
+// Emits current value at subscription time
+lazy$.subscribe(x => console.log(x)); // 2
+
+value = 3;
+lazy$.subscribe(x => console.log(x)); // 3
+```
+
+</CodeGroup>
+
+## Error Handling
+
+```typescript
+import { defer, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+
+const riskyObservable$ = defer(() => {
+  if (Math.random() > 0.5) {
+    throw new Error('Factory error!');
+  }
+  return of('Success');
+});
+
+riskyObservable$.pipe(
+  catchError(err => {
+    console.error('Caught:', err.message);
+    return of('Fallback value');
+  })
+).subscribe(x => console.log(x));
+```
+
+## Performance Considerations
+
+<Tip>
+  Use `defer` when you want to delay expensive operations until they're actually needed. This is particularly useful for:
+  - Lazy loading data
+  - Conditional resource allocation
+  - Dynamic Observable selection
+</Tip>
+
+```typescript
+import { defer, of } from 'rxjs';
+
+// Expensive computation only runs when subscribed
+const expensive$ = defer(() => {
+  console.log('Performing expensive operation');
+  const result = performHeavyComputation();
+  return of(result);
+});
+
+// No computation yet...
+console.log('Observable created');
+
+// Computation happens now
+expensive$.subscribe(result => console.log('Result:', result));
+```
+
+## Important Notes
+
+<Note>
+  The factory function is called **once per subscription**, not once per Observable creation. This means each subscriber gets its own independent Observable.
+</Note>
+
+<Warning>
+  If the factory function has side effects, they will occur on every subscription. Make sure this is your intended behavior.
+</Warning>
+
+## Related Operators
+
+- **[of](/api/creation/of)** - Create Observable from values
+- **[from](/api/creation/from)** - Convert to Observable
+- **iif** - Conditional Observable selection
+- **[throwError](/api/creation/throwError)** - Create error Observable
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/defer)

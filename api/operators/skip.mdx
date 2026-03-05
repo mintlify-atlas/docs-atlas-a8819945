@@ -1,0 +1,380 @@
+---
+title: skip
+description: Skips the first N values emitted by the source Observable
+---
+
+## Overview
+
+Returns an Observable that skips the first `count` items emitted by the source Observable.
+
+<Note>
+`skip` ignores the specified number of values at the beginning of the stream, then emits all subsequent values. It's useful for bypassing initial values or warmup periods.
+</Note>
+
+## Type Signature
+
+```typescript
+function skip<T>(count: number): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="count" type="number" required>
+  The number of times items emitted by source Observable should be skipped.
+  
+  Must be a non-negative number. If `count` is 0 or negative, all values pass through.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that skips the first `count` values emitted by the source Observable.
+
+## How It Works
+
+1. Maintains a counter starting at 0
+2. For each emitted value:
+   - If counter < `count`: **skips** the value and increments counter
+   - If counter >= `count`: **emits** all subsequent values
+3. After skipping `count` values, all remaining values pass through unchanged
+
+<Tip>
+`skip(n)` is equivalent to `filter((_, index) => index >= n)`.
+</Tip>
+
+## Usage Examples
+
+### Basic Example: Skip First 3
+
+```typescript
+import { interval, skip } from 'rxjs';
+
+const source = interval(500);
+const result = source.pipe(skip(10));
+
+result.subscribe(value => console.log(value));
+// Output: 10...11...12...13...
+```
+
+### Skip Initial Values
+
+```typescript
+import { of, skip } from 'rxjs';
+
+const numbers$ = of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+const withoutFirst5$ = numbers$.pipe(skip(5));
+
+withoutFirst5$.subscribe(console.log);
+// Output: 6, 7, 8, 9, 10
+```
+
+### Skip Warmup Period
+
+```typescript
+import { interval, skip, take } from 'rxjs';
+
+// Skip first 5 seconds of data
+const sensor$ = interval(1000).pipe(
+  skip(5), // Skip first 5 emissions
+  take(10) // Then take 10 values
+);
+
+sensor$.subscribe(value => {
+  console.log('Sensor reading:', value);
+});
+// Output: 5, 6, 7, 8, 9, 10, 11, 12, 13, 14
+```
+
+<CodeGroup>
+```typescript Skip Headers
+import { from, skip } from 'rxjs';
+
+const csvLines = [
+  'Name,Age,City',  // Header
+  'Alice,30,NYC',
+  'Bob,25,LA',
+  'Charlie,35,SF'
+];
+
+const dataRows$ = from(csvLines).pipe(
+  skip(1) // Skip header row
+);
+
+dataRows$.subscribe(row => {
+  console.log('Data:', row);
+  processRow(row);
+});
+```
+
+```typescript Pagination
+import { from, skip, take } from 'rxjs';
+
+function getPage(items: any[], pageNumber: number, pageSize: number = 10) {
+  return from(items).pipe(
+    skip((pageNumber - 1) * pageSize),
+    take(pageSize)
+  );
+}
+
+const items = Array.from({ length: 100 }, (_, i) => ({ id: i + 1 }));
+
+// Get page 3 (items 21-30)
+getPage(items, 3).subscribe(item => {
+  console.log('Item:', item);
+});
+```
+
+```typescript Skip Initial Loading
+import { skip, BehaviorSubject } from 'rxjs';
+
+interface LoadingState<T> {
+  loading: boolean;
+  data: T | null;
+  error: Error | null;
+}
+
+const state$ = new BehaviorSubject<LoadingState<any>>({
+  loading: true,
+  data: null,
+  error: null
+});
+
+// Skip the initial loading state
+const dataOnly$ = state$.pipe(
+  skip(1) // Skip initial state
+);
+
+dataOnly$.subscribe(state => {
+  if (state.data) {
+    displayData(state.data);
+  }
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `skip` when:
+- **Ignoring initial values** (warmup, calibration)
+- Implementing **pagination** (skip to page)
+- Skipping **header rows** or metadata
+- **Bypassing** known initial emissions
+- Creating **offset streams**
+
+### Don't use `skip` when:
+- You need **conditional skipping** (use `filter` or `skipWhile`)
+- You want to skip based on **another Observable** (use `skipUntil`)
+- You need to skip from the **end** (use `skipLast`)
+- You want to **take only N values** (use `take` instead)
+
+## Common Patterns
+
+### Skip BehaviorSubject Initial Value
+
+```typescript
+import { BehaviorSubject, skip } from 'rxjs';
+
+const count$ = new BehaviorSubject(0);
+
+// Skip the initial value (0)
+const updates$ = count$.pipe(skip(1));
+
+updates$.subscribe(count => {
+  console.log('Count updated to:', count);
+});
+
+count$.next(1); // This will be logged
+count$.next(2); // This will be logged
+```
+
+### Combine with Take for Slicing
+
+```typescript
+import { range, skip, take } from 'rxjs';
+
+const numbers$ = range(0, 100);
+
+// Get numbers 20-29 (slice)
+const slice$ = numbers$.pipe(
+  skip(20),
+  take(10)
+);
+
+slice$.subscribe(console.log);
+// Output: 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+```
+
+### Skip Calibration Period
+
+```typescript
+import { interval, skip, map } from 'rxjs';
+
+const sensorData$ = interval(100).pipe(
+  map(() => readSensor()),
+  skip(10) // Skip first 10 readings (1 second calibration)
+);
+
+sensorData$.subscribe(reading => {
+  console.log('Calibrated reading:', reading);
+  processReading(reading);
+});
+
+function readSensor() {
+  return Math.random() * 100;
+}
+```
+
+### Skip Zero or Negative Count
+
+```typescript
+import { of, skip } from 'rxjs';
+
+const numbers$ = of(1, 2, 3, 4, 5);
+
+// Skip 0: All values pass through
+numbers$.pipe(skip(0)).subscribe(console.log);
+// Output: 1, 2, 3, 4, 5
+
+// Negative skip: Treated as 0, all values pass through
+numbers$.pipe(skip(-5)).subscribe(console.log);
+// Output: 1, 2, 3, 4, 5
+```
+
+<Tip>
+When working with `BehaviorSubject`, use `skip(1)` to ignore the initial value and only react to subsequent changes.
+</Tip>
+
+### Array-like Slicing
+
+```typescript
+import { from, skip, take } from 'rxjs';
+
+const array = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+// Equivalent to array.slice(3, 7)
+from(array).pipe(
+  skip(3),
+  take(4)
+).subscribe(console.log);
+// Output: 3, 4, 5, 6
+```
+
+### Skip More Than Available
+
+```typescript
+import { of, skip } from 'rxjs';
+
+const short$ = of(1, 2, 3);
+
+// Skip more than available: completes without emitting
+short$.pipe(skip(10)).subscribe({
+  next: val => console.log('Value:', val),
+  complete: () => console.log('Complete')
+});
+// Output: Complete (no values emitted)
+```
+
+## Practical Examples
+
+### Skip Intro Animation
+
+```typescript
+import { interval, skip, take, tap } from 'rxjs';
+
+const animationFrames$ = interval(16).pipe( // ~60fps
+  take(180), // 3 seconds total
+  skip(60) // Skip first second (intro)
+);
+
+animationFrames$.subscribe(frame => {
+  renderMainAnimation(frame - 60);
+});
+```
+
+### Skip Test Data
+
+```typescript
+import { from, skip } from 'rxjs';
+
+const apiResults$ = from([
+  { id: 'test-1', name: 'Test User 1' },
+  { id: 'test-2', name: 'Test User 2' },
+  { id: '1', name: 'Alice' },
+  { id: '2', name: 'Bob' }
+]);
+
+const realData$ = apiResults$.pipe(
+  skip(2) // Skip test entries
+);
+
+realData$.subscribe(user => {
+  console.log('Real user:', user);
+});
+```
+
+### Offset Time Series
+
+```typescript
+import { interval, skip, take, zip, map } from 'rxjs';
+
+const signal1$ = interval(100).pipe(take(20));
+const signal2$ = interval(100).pipe(
+  skip(5), // Offset by 5 emissions
+  take(20)
+);
+
+// Compare offset signals
+zip(signal1$, signal2$).pipe(
+  map(([a, b]) => ({ signal1: a, signal2: b, diff: b - a }))
+).subscribe(console.log);
+```
+
+<Warning>
+If you skip more values than the source emits, the result will be an empty Observable that just completes.
+</Warning>
+
+## Comparison with Related Operators
+
+```typescript
+import { of, skip, skipWhile, skipUntil, skipLast, interval, take } from 'rxjs';
+
+const nums$ = of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+// skip: Skip first N
+nums$.pipe(skip(3)).subscribe(console.log);
+// Output: 4, 5, 6, 7, 8, 9, 10
+
+// skipWhile: Skip while condition is true
+nums$.pipe(skipWhile(x => x < 5)).subscribe(console.log);
+// Output: 5, 6, 7, 8, 9, 10
+
+// skipLast: Skip last N
+nums$.pipe(skipLast(3)).subscribe(console.log);
+// Output: 1, 2, 3, 4, 5, 6, 7
+
+// skipUntil: Skip until another Observable emits
+const notifier$ = interval(500).pipe(take(1));
+nums$.pipe(skipUntil(notifier$)); // Depends on timing
+```
+
+## Performance Note
+
+```typescript
+import { range, skip } from 'rxjs';
+
+// Efficient: skip doesn't store values
+const efficient$ = range(1, 1000000).pipe(
+  skip(999990) // Just skips, doesn't buffer
+);
+
+efficient$.subscribe(console.log);
+// Output: 999991 through 1000000
+```
+
+## Related Operators
+
+- **[take](/api/operators/take)** - Takes first N values
+- **[skipLast](/api/operators/skipLast)** - Skips last N values
+- **[skipWhile](/api/operators/skipWhile)** - Skips while condition is true
+- **[skipUntil](/api/operators/skipUntil)** - Skips until another Observable emits
+- **[filter](/api/operators/filter)** - Conditionally filter values

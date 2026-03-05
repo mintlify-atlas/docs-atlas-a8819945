@@ -1,0 +1,49 @@
+---
+title: skipUntil
+description: Skips values from the source until another Observable emits
+---
+
+## Overview
+
+Returns an Observable that skips items emitted by the source Observable until a second Observable emits an item.
+
+## Type Signature
+
+```typescript
+function skipUntil<T>(notifier: ObservableInput<any>): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="notifier" type="ObservableInput<any>" required>
+  An ObservableInput that has to emit an item before the source Observable elements begin to be mirrored by the resulting Observable.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that skips items from the source Observable until the notifier Observable emits an item.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { interval, fromEvent, skipUntil } from 'rxjs';
+
+const intervalObservable = interval(1000);
+const click = fromEvent(document, 'click');
+
+const emitAfterClick = intervalObservable.pipe(
+  skipUntil(click)
+);
+
+emitAfterClick.subscribe(value => console.log(value));
+// Starts emitting after first click
+```
+
+## Related Operators
+
+- **[skip](/api/operators/skip)** - Skips first N values
+- **[skipLast](/api/operators/skipLast)** - Skips last N values  
+- **[skipWhile](/api/operators/skipWhile)** - Skips while condition is true
+- **[takeUntil](/api/operators/takeUntil)** - Takes values until another Observable emits

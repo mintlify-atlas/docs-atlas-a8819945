@@ -1,0 +1,463 @@
+---
+title: startWith
+description: Returns an Observable that synchronously emits provided values before subscribing to the source.
+---
+
+## Overview
+
+`startWith` synchronously emits one or more specified values immediately upon subscription, before emitting any values from the source Observable. This is useful for providing initial values or knowing when subscription has occurred.
+
+<Tip>
+  Use `startWith` to provide default or initial values for Observables, especially useful with `combineLatest` to ensure immediate emission.
+</Tip>
+
+## Type Signature
+
+```typescript
+export function startWith<T>(value: null): OperatorFunction<T, T | null>;
+export function startWith<T>(value: undefined): OperatorFunction<T, T | undefined>;
+export function startWith<T, A extends readonly unknown[] = T[]>(
+  ...values: A
+): OperatorFunction<T, T | ValueFromArray<A>>
+```
+
+## Parameters
+
+<ParamField path="values" type="...A[]" required>
+  One or more values to emit synchronously before the source Observable emits. These values are emitted in the order provided.
+</ParamField>
+
+## Returns
+
+`OperatorFunction<T, T | ValueFromArray<A>>` - An operator function that returns an Observable that synchronously emits the provided values before subscribing to and mirroring the source Observable.
+
+## Usage Examples
+
+### Basic Example: Timer with Start Notification
+
+<CodeGroup>
+```typescript Basic Usage
+import { timer, map, startWith } from 'rxjs';
+
+timer(1000)
+  .pipe(
+    map(() => 'timer emit'),
+    startWith('timer start')
+  )
+  .subscribe(x => console.log(x));
+
+// Output:
+// 'timer start' (immediately)
+// 'timer emit' (after 1 second)
+```
+
+```typescript Multiple Values
+import { interval, map, take, startWith } from 'rxjs';
+
+interval(1000)
+  .pipe(
+    take(3),
+    map(x => `Value: ${x}`),
+    startWith('Starting...', 'Ready!', 'Go!')
+  )
+  .subscribe(console.log);
+
+// Output:
+// 'Starting...' (immediately)
+// 'Ready!' (immediately)
+// 'Go!' (immediately)
+// 'Value: 0' (after 1s)
+// 'Value: 1' (after 2s)
+// 'Value: 2' (after 3s)
+```
+</CodeGroup>
+
+### Real-World Example: Form Field with Default Value
+
+```typescript
+import { fromEvent, map, startWith } from 'rxjs';
+
+const emailInput = document.getElementById('email') as HTMLInputElement;
+
+const email$ = fromEvent(emailInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('') // Start with empty string
+);
+
+email$.subscribe(value => {
+  console.log('Email value:', value);
+  validateEmail(value);
+});
+
+// Immediately logs: 'Email value: '
+// Then logs on each input change
+```
+
+### Reactive Form Validation with Defaults
+
+```typescript
+import { fromEvent, map, startWith, combineLatestWith } from 'rxjs';
+
+interface RegistrationForm {
+  username: string;
+  email: string;
+  password: string;
+  agreeToTerms: boolean;
+}
+
+interface FormValidation {
+  isValid: boolean;
+  errors: string[];
+}
+
+const usernameInput = document.getElementById('username') as HTMLInputElement;
+const emailInput = document.getElementById('email') as HTMLInputElement;
+const passwordInput = document.getElementById('password') as HTMLInputElement;
+const termsCheckbox = document.getElementById('terms') as HTMLInputElement;
+
+const username$ = fromEvent(usernameInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('')
+);
+
+const email$ = fromEvent(emailInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('')
+);
+
+const password$ = fromEvent(passwordInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith('')
+);
+
+const agreeToTerms$ = fromEvent(termsCheckbox, 'change').pipe(
+  map(e => (e.target as HTMLInputElement).checked),
+  startWith(false)
+);
+
+// Combine all fields - emits immediately because of startWith
+username$.pipe(
+  combineLatestWith(email$, password$, agreeToTerms$),
+  map(([username, email, password, terms]) => {
+    const errors: string[] = [];
+    
+    if (username.length < 3) errors.push('Username must be at least 3 characters');
+    if (!email.includes('@')) errors.push('Invalid email format');
+    if (password.length < 8) errors.push('Password must be at least 8 characters');
+    if (!terms) errors.push('You must agree to the terms');
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  })
+).subscribe((validation: FormValidation) => {
+  const submitBtn = document.getElementById('submit') as HTMLButtonElement;
+  submitBtn.disabled = !validation.isValid;
+  
+  if (!validation.isValid) {
+    console.log('Form errors:', validation.errors);
+  }
+});
+```
+
+### Loading State Management
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { map, startWith, catchError, of } from 'rxjs';
+
+interface LoadingState<T> {
+  loading: boolean;
+  data: T | null;
+  error: string | null;
+}
+
+function fetchUserData(userId: string): Observable<LoadingState<User>> {
+  return ajax.getJSON<User>(`/api/users/${userId}`).pipe(
+    map(user => ({
+      loading: false,
+      data: user,
+      error: null
+    })),
+    startWith({
+      loading: true,
+      data: null,
+      error: null
+    }),
+    catchError(err => of({
+      loading: false,
+      data: null,
+      error: err.message
+    }))
+  );
+}
+
+fetchUserData('123').subscribe((state: LoadingState<User>) => {
+  if (state.loading) {
+    showLoadingSpinner();
+  } else if (state.error) {
+    showError(state.error);
+  } else if (state.data) {
+    displayUser(state.data);
+  }
+});
+
+// Immediately shows loading spinner, then shows user data or error
+```
+
+### Search with "No Query" State
+
+```typescript
+import { fromEvent, map, debounceTime, switchMap, startWith } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface SearchResult {
+  query: string;
+  results: any[];
+  timestamp: number;
+}
+
+const searchInput = document.getElementById('search') as HTMLInputElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  startWith(''), // Start with empty query
+  debounceTime(300),
+  switchMap(query => {
+    if (!query.trim()) {
+      return of({
+        query: '',
+        results: [],
+        timestamp: Date.now()
+      });
+    }
+    
+    return ajax.getJSON<any[]>(`/api/search?q=${query}`).pipe(
+      map(results => ({
+        query,
+        results,
+        timestamp: Date.now()
+      }))
+    );
+  })
+);
+
+search$.subscribe((result: SearchResult) => {
+  if (result.query === '') {
+    clearSearchResults();
+  } else {
+    displaySearchResults(result.results);
+    console.log(`Found ${result.results.length} results for "${result.query}"`);
+  }
+});
+```
+
+## Practical Scenarios
+
+<Note>
+  `startWith` is particularly useful with `combineLatest` or `combineLatestWith`, as it ensures the combined stream emits immediately without waiting for all sources.
+</Note>
+
+### Scenario 1: Shopping Cart Count
+
+```typescript
+import { Subject, scan, startWith, map } from 'rxjs';
+
+interface CartAction {
+  type: 'add' | 'remove' | 'clear';
+  quantity?: number;
+}
+
+const cartActions$ = new Subject<CartAction>();
+
+const cartCount$ = cartActions$.pipe(
+  scan((count, action) => {
+    switch (action.type) {
+      case 'add':
+        return count + (action.quantity || 1);
+      case 'remove':
+        return Math.max(0, count - (action.quantity || 1));
+      case 'clear':
+        return 0;
+      default:
+        return count;
+    }
+  }, 0),
+  startWith(0) // Start with 0 items
+);
+
+cartCount$.subscribe(count => {
+  updateCartBadge(count);
+  console.log('Cart count:', count);
+});
+
+// Immediately updates badge to 0
+cartActions$.next({ type: 'add', quantity: 2 });
+// Updates badge to 2
+```
+
+### Scenario 2: Theme Preference with Default
+
+```typescript
+import { fromEvent, map, startWith, distinctUntilChanged } from 'rxjs';
+
+type Theme = 'light' | 'dark' | 'auto';
+
+const themeToggle = document.getElementById('theme-toggle') as HTMLSelectElement;
+
+// Load saved theme or default to 'auto'
+const initialTheme = (localStorage.getItem('theme') as Theme) || 'auto';
+
+const theme$ = fromEvent(themeToggle, 'change').pipe(
+  map(e => (e.target as HTMLSelectElement).value as Theme),
+  startWith(initialTheme),
+  distinctUntilChanged()
+);
+
+theme$.subscribe(theme => {
+  console.log('Applying theme:', theme);
+  document.body.className = `theme-${theme}`;
+  localStorage.setItem('theme', theme);
+});
+
+// Theme is applied immediately on page load
+```
+
+### Scenario 3: Paginated Data with Initial Page
+
+```typescript
+import { Subject, switchMap, startWith, scan } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface Page<T> {
+  data: T[];
+  page: number;
+  hasMore: boolean;
+}
+
+const loadMoreClicks$ = new Subject<void>();
+
+const currentPage$ = loadMoreClicks$.pipe(
+  scan(page => page + 1, 0),
+  startWith(1) // Start with page 1
+);
+
+const users$ = currentPage$.pipe(
+  switchMap(page => 
+    ajax.getJSON<Page<User>>(`/api/users?page=${page}&limit=20`)
+  )
+);
+
+users$.subscribe((page: Page<User>) => {
+  appendUsersToList(page.data);
+  console.log(`Loaded page ${page.page}`);
+  
+  const loadMoreBtn = document.getElementById('load-more') as HTMLButtonElement;
+  loadMoreBtn.disabled = !page.hasMore;
+});
+
+// Immediately loads page 1
+const loadMoreBtn = document.getElementById('load-more') as HTMLButtonElement;
+fromEvent(loadMoreBtn, 'click').subscribe(() => loadMoreClicks$.next());
+```
+
+### Scenario 4: Real-Time Price Updates with Current Price
+
+```typescript
+import { webSocket } from 'rxjs/webSocket';
+import { startWith, scan } from 'rxjs';
+
+interface PriceUpdate {
+  symbol: string;
+  price: number;
+  timestamp: number;
+}
+
+interface StockPrice {
+  [symbol: string]: number;
+}
+
+const initialPrices: StockPrice = {
+  'AAPL': 150.00,
+  'GOOGL': 2800.00,
+  'MSFT': 300.00
+};
+
+const priceUpdates$ = webSocket<PriceUpdate>('ws://stocks.example.com/prices');
+
+const currentPrices$ = priceUpdates$.pipe(
+  scan((prices, update) => ({
+    ...prices,
+    [update.symbol]: update.price
+  }), initialPrices),
+  startWith(initialPrices) // Show initial prices immediately
+);
+
+currentPrices$.subscribe((prices: StockPrice) => {
+  Object.entries(prices).forEach(([symbol, price]) => {
+    updateStockDisplay(symbol, price);
+  });
+});
+
+// Displays initial prices immediately, then updates in real-time
+```
+
+## Behavior Details
+
+### Emission Timing
+
+- Values are emitted **synchronously** when the Observable is subscribed
+- All `startWith` values are emitted before any source values
+- Multiple values are emitted in the order provided
+
+```typescript
+import { of, startWith, delay } from 'rxjs';
+
+console.log('Before subscribe');
+of('source')
+  .pipe(
+    delay(1000),
+    startWith('start1', 'start2')
+  )
+  .subscribe(x => console.log('Emitted:', x));
+console.log('After subscribe');
+
+// Output:
+// Before subscribe
+// Emitted: start1
+// Emitted: start2
+// After subscribe
+// ... 1 second later ...
+// Emitted: source
+```
+
+### Type Safety
+
+<Warning>
+  The return type includes both the source type `T` and the types of started values. TypeScript will infer a union type.
+</Warning>
+
+```typescript
+import { interval, startWith, take } from 'rxjs';
+
+const source$ = interval(1000).pipe(
+  take(3),
+  startWith('loading') // Type: Observable<number | string>
+);
+
+source$.subscribe(value => {
+  if (typeof value === 'string') {
+    console.log('Initial value:', value);
+  } else {
+    console.log('Interval value:', value);
+  }
+});
+```
+
+## Related Operators
+
+- [`endWith`](/api/operators/endWith) - Appends values after the source completes
+- [`concat`](/api/operators/concat) - Concatenates Observables sequentially
+- [`defaultIfEmpty`](/api/operators/defaultIfEmpty) - Emits a default value if source completes without emitting
+- [`of`](/api/operators/of) - Creates an Observable that emits specified values

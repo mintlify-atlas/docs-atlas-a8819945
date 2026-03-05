@@ -1,0 +1,313 @@
+---
+title: exhaustMap
+description: Projects values to Observables, ignoring new values while an inner Observable is active
+---
+
+## Overview
+
+Projects each source value to an Observable (the "inner" Observable), but ignores new source values while the previous inner Observable hasn't completed yet. Once the inner Observable completes, `exhaustMap` will accept and project the next source value.
+
+<Tip>
+  Use `exhaustMap` to prevent operation overlap - perfect for scenarios like preventing double-clicks on submit buttons or ignoring rapid requests while one is in progress.
+</Tip>
+
+## Type Signature
+
+```typescript
+function exhaustMap<T, O extends ObservableInput<any>>(
+  project: (value: T, index: number) => O
+): OperatorFunction<T, ObservedValueOf<O>>
+```
+
+## Parameters
+
+<ParamField path="project" type="(value: T, index: number) => O" required>
+  A function that maps each source value to an Observable (or Promise, Array, etc.). The function receives:
+  - `value`: The emitted value from the source
+  - `index`: The zero-based index of the emission (only counts accepted values)
+  
+  Must return an ObservableInput that will be flattened into the output.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, ObservedValueOf<O>>">
+  A function that returns an Observable that emits values from the projected inner Observables, dropping source values that arrive while an inner Observable is still active.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Prevent Overlapping Timers
+
+<CodeGroup>
+```typescript Simple Exhaustion
+import { fromEvent, exhaustMap, interval, take } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+
+// Only start a timer if no timer is currently running
+const result = clicks.pipe(
+  exhaustMap(() => interval(1000).pipe(take(5)))
+);
+
+result.subscribe(x => console.log(x));
+// Click 1: starts timer → 0, 1, 2, 3, 4 (over 5 seconds)
+// Clicks during those 5 seconds: IGNORED
+// Click after timer completes: starts new timer → 0, 1, 2, 3, 4
+```
+
+```typescript Login Button
+import { fromEvent, exhaustMap, from } from 'rxjs';
+
+const loginButton = document.getElementById('login');
+const clicks = fromEvent(loginButton, 'click');
+
+const login = clicks.pipe(
+  exhaustMap(() => {
+    console.log('Login attempt started');
+    return from(
+      fetch('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ /* credentials */ })
+      }).then(res => res.json())
+    );
+  })
+);
+
+login.subscribe(
+  response => console.log('Login successful:', response),
+  error => console.error('Login failed:', error)
+);
+// Multiple rapid clicks only trigger ONE login request
+// Subsequent clicks ignored until first request completes
+```
+</CodeGroup>
+
+### Preventing Double Submissions
+
+```typescript
+import { fromEvent, exhaustMap, from, delay, of } from 'rxjs';
+
+const form = document.getElementById('myForm');
+const submissions = fromEvent(form, 'submit');
+
+submissions.pipe(
+  exhaustMap((event: Event) => {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target as HTMLFormElement);
+    const data = Object.fromEntries(formData.entries());
+    
+    console.log('Submitting form...');
+    showSpinner();
+    
+    return from(
+      fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).then(res => res.json())
+    ).pipe(
+      tap(() => hideSpinner())
+    );
+  })
+).subscribe({
+  next: response => {
+    console.log('Form submitted successfully:', response);
+    showSuccess();
+  },
+  error: error => {
+    console.error('Submission failed:', error);
+    showError();
+    hideSpinner();
+  }
+});
+
+// User can spam submit button, but only one request goes through at a time
+```
+
+### File Upload with Progress
+
+```typescript
+import { fromEvent, exhaustMap, from } from 'rxjs';
+
+const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+const uploadButton = document.getElementById('upload');
+
+fromEvent(uploadButton, 'click').pipe(
+  exhaustMap(() => {
+    const file = fileInput.files?.[0];
+    if (!file) {
+      return of({ error: 'No file selected' });
+    }
+    
+    console.log(`Starting upload: ${file.name}`);
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return from(
+      new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percentComplete = (e.loaded / e.total) * 100;
+            updateProgressBar(percentComplete);
+          }
+        });
+        
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status}`));
+          }
+        });
+        
+        xhr.addEventListener('error', () => reject(new Error('Upload error')));
+        
+        xhr.open('POST', '/api/upload');
+        xhr.send(formData);
+      })
+    );
+  })
+).subscribe({
+  next: response => console.log('Upload complete:', response),
+  error: error => console.error('Upload failed:', error)
+});
+
+// Clicking upload multiple times during an active upload is ignored
+```
+
+## Marble Diagram
+
+```
+Source:     --1---2---3-------4---5---|
+Project(1):   a---b---c|
+Project(3):               d---e|
+Project(5):                       f---g|
+Result:     --a---b---c---d---e---f---g---|
+                  ↑ ignored (1 still active)
+                      ↑ ignored (1 still active)
+                                  ↑ ignored (4 still active)
+```
+
+Values 2, 3, and 5 are dropped because an inner Observable was already active.
+
+## Common Use Cases
+
+1. **Form Submissions**: Prevent duplicate submissions while request is in progress
+2. **Login/Signup**: Ignore rapid button clicks during authentication
+3. **Search Requests**: Prevent overwhelming the server with rapid searches
+4. **File Uploads**: Only allow one upload at a time
+5. **Navigation**: Prevent navigation spam while route is changing
+6. **Refresh Operations**: Ignore refresh requests while already refreshing
+
+<Info>
+  `exhaustMap` maintains an index counter that only increments for values that are actually projected (not ignored). This differs from the source index.
+</Info>
+
+## Advanced Example: Polling with Manual Refresh
+
+```typescript
+import { interval, merge, fromEvent, exhaustMap, switchMap, takeUntil } from 'rxjs';
+
+const refreshButton = document.getElementById('refresh');
+const stopButton = document.getElementById('stop');
+
+// Auto-refresh every 30 seconds OR manual refresh button
+const refreshTriggers = merge(
+  interval(30000),
+  fromEvent(refreshButton, 'click')
+);
+
+const stopSignal = fromEvent(stopButton, 'click');
+
+const dataStream = refreshTriggers.pipe(
+  exhaustMap(() => {
+    console.log('Fetching data...');
+    showLoadingIndicator();
+    
+    return from(
+      fetch('/api/data')
+        .then(res => res.json())
+        .then(data => {
+          hideLoadingIndicator();
+          return data;
+        })
+    ).pipe(
+      catchError(error => {
+        hideLoadingIndicator();
+        console.error('Fetch failed:', error);
+        return of({ error: error.message });
+      })
+    );
+  }),
+  takeUntil(stopSignal)
+);
+
+dataStream.subscribe(data => {
+  console.log('Data updated:', data);
+  updateUI(data);
+});
+
+// Auto-refresh happens every 30s
+// Manual refresh clicks during an active fetch are ignored
+// Multiple rapid clicks on refresh button only trigger one fetch
+```
+
+## Comparison with Other Flattening Operators
+
+<CodeGroup>
+```typescript exhaustMap
+// Ignores new values while inner is active
+clicks.pipe(
+  exhaustMap(() => timer(5000))
+)
+// Click 1: starts 5s timer
+// Clicks 2-5 during timer: IGNORED
+// Click 6 after timer: starts new 5s timer
+```
+
+```typescript switchMap
+// Cancels previous inner Observable
+clicks.pipe(
+  switchMap(() => timer(5000))
+)
+// Click 1: starts 5s timer
+// Click 2: CANCELS click 1 timer, starts new timer
+// Click 3: CANCELS click 2 timer, starts new timer
+```
+
+```typescript concatMap
+// Queues all values
+clicks.pipe(
+  concatMap(() => timer(5000))
+)
+// Click 1: starts 5s timer
+// Clicks 2-5: QUEUED, will execute sequentially
+// All clicks eventually execute
+```
+
+```typescript mergeMap
+// Runs all concurrently
+clicks.pipe(
+  mergeMap(() => timer(5000))
+)
+// Click 1: starts 5s timer
+// Clicks 2-5: each starts its own 5s timer
+// All run simultaneously
+```
+</CodeGroup>
+
+<Warning>
+  If the inner Observable never completes, `exhaustMap` will ignore all subsequent source values indefinitely.
+</Warning>
+
+## Related Operators
+
+- **[switchMap](/api/operators/switchmap)** - Cancels previous inner Observable when new value arrives
+- **[concatMap](/api/operators/concatmap)** - Queues values and processes them sequentially
+- **[mergeMap](/api/operators/mergemap)** - Processes all values concurrently
+- **[exhaustAll](/api/operators/exhaustall)** - Flattens higher-order Observable by exhausting
+- **[throttle](/api/operators/throttle)** - Similar concept but for rate limiting

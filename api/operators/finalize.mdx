@@ -1,0 +1,341 @@
+---
+title: 'finalize'
+description: 'Execute a callback function when the observable terminates'
+---
+
+## Overview
+
+The `finalize` operator returns an Observable that mirrors the source Observable, but calls a specified callback function when the source terminates (either on complete, error, or explicit unsubscribe).
+
+<Note>
+  `finalize` is called on ANY termination - whether the Observable completes successfully, errors, or is explicitly unsubscribed.
+</Note>
+
+## Signature
+
+```typescript
+function finalize<T>(
+  callback: () => void
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="callback" type="() => void" required>
+  Function to be called when the source terminates (on complete, error, or unsubscribe).
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="MonoTypeOperatorFunction<T>">
+  A function that returns an Observable that mirrors the source, but calls the specified callback function on termination.
+</ParamField>
+
+## Usage Examples
+
+### Cleanup on Completion
+
+Execute cleanup logic when an Observable completes:
+
+<CodeGroup>
+```typescript Basic finalize
+import { interval, take, finalize } from 'rxjs';
+
+const source = interval(1000);
+const example = source.pipe(
+  take(5),
+  finalize(() => console.log('Sequence complete'))
+);
+
+example.subscribe(val => console.log(val));
+
+// Output:
+// 0
+// 1
+// 2
+// 3
+// 4
+// Sequence complete
+```
+
+```typescript Multiple finalize
+import { of, finalize } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  finalize(() => console.log('First finalize')),
+  finalize(() => console.log('Second finalize'))
+).subscribe(console.log);
+
+// Output:
+// 1
+// 2
+// 3
+// Second finalize
+// First finalize
+// (finalize callbacks execute in reverse order)
+```
+</CodeGroup>
+
+### Cleanup on Unsubscribe
+
+Finalize is called even when explicitly unsubscribed:
+
+```typescript
+import { interval, finalize, tap, noop, timer } from 'rxjs';
+
+const source = interval(100).pipe(
+  finalize(() => console.log('[finalize] Called')),
+  tap({
+    next: () => console.log('[next] Called'),
+    error: () => console.log('[error] Not called'),
+    complete: () => console.log('[complete] Not called')
+  })
+);
+
+const sub = source.subscribe({
+  next: x => console.log(x),
+  error: noop,
+  complete: () => console.log('[subscribe complete] Not called')
+});
+
+timer(150).subscribe(() => sub.unsubscribe());
+
+// Output:
+// [next] Called
+// 0
+// [finalize] Called
+```
+
+### Resource Management
+
+Clean up resources like WebSocket connections:
+
+```typescript
+import { Observable, finalize } from 'rxjs';
+
+function createWebSocketObservable(url: string) {
+  return new Observable(subscriber => {
+    const ws = new WebSocket(url);
+    
+    ws.onmessage = (event) => subscriber.next(event.data);
+    ws.onerror = (error) => subscriber.error(error);
+    ws.onclose = () => subscriber.complete();
+    
+    return () => ws.close();
+  }).pipe(
+    finalize(() => {
+      console.log('WebSocket connection cleanup');
+      // Additional cleanup if needed
+    })
+  );
+}
+
+const ws$ = createWebSocketObservable('ws://localhost:8080');
+const sub = ws$.subscribe(data => console.log(data));
+
+// Later...
+sub.unsubscribe(); // Triggers finalize
+```
+
+### Loading State Management
+
+Hide loading indicators on completion or error:
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { finalize, tap } from 'rxjs/operators';
+
+function fetchData(url: string) {
+  // Show loading indicator
+  showLoadingSpinner();
+  
+  return ajax.getJSON(url).pipe(
+    tap(data => updateUI(data)),
+    finalize(() => {
+      // Hide loading indicator regardless of success/failure
+      hideLoadingSpinner();
+    })
+  );
+}
+
+fetchData('/api/users').subscribe({
+  next: users => console.log('Users loaded:', users),
+  error: err => console.error('Failed to load users:', err)
+});
+// Loading spinner is hidden in both success and error cases
+```
+
+### File Upload Cleanup
+
+Clean up file handles and temporary resources:
+
+```typescript
+import { fromEvent, switchMap, finalize } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const fileInput = document.querySelector('input[type="file"]');
+
+fromEvent(fileInput, 'change').pipe(
+  switchMap((event: Event) => {
+    const file = (event.target as HTMLInputElement).files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return ajax({
+      url: '/upload',
+      method: 'POST',
+      body: formData
+    }).pipe(
+      finalize(() => {
+        console.log('Upload attempt finished');
+        // Clean up temp files, reset UI, etc.
+        (event.target as HTMLInputElement).value = '';
+      })
+    );
+  })
+).subscribe({
+  next: response => console.log('Upload successful:', response),
+  error: err => console.error('Upload failed:', err)
+});
+```
+
+## When Finalize is Called
+
+<Tip>
+  `finalize` executes in all termination scenarios:
+  - ✅ Observable completes normally
+  - ✅ Observable errors
+  - ✅ Subscription is explicitly unsubscribed
+</Tip>
+
+The callback is added to the subscriber's teardown logic, ensuring it runs regardless of how the subscription ends.
+
+## Execution Order
+
+When multiple `finalize` operators are chained:
+
+```typescript
+import { of, finalize } from 'rxjs';
+
+of(1).pipe(
+  finalize(() => console.log('A')),
+  finalize(() => console.log('B')),
+  finalize(() => console.log('C'))
+).subscribe();
+
+// Output:
+// C
+// B  
+// A
+// (Reverse order - like a stack)
+```
+
+This happens because each finalize adds its callback to the subscription teardown chain.
+
+## Implementation Details
+
+The implementation is remarkably simple:
+
+```typescript
+export function finalize<T>(callback: () => void): MonoTypeOperatorFunction<T> {
+  return (source) =>
+    new Observable((subscriber) => {
+      source.subscribe(subscriber);
+      subscriber.add(callback);
+    });
+}
+```
+
+The callback is added to the subscriber using `subscriber.add()`, which ensures it's called during teardown.
+
+## Common Use Cases
+
+1. **Resource Cleanup**: Close connections, files, or other resources
+2. **Loading States**: Hide loading indicators regardless of outcome
+3. **Analytics**: Track completion of operations
+4. **UI Updates**: Reset forms, clear selections, etc.
+5. **Logging**: Log end of operations for debugging
+6. **Timers**: Clear intervals or timeouts
+
+## Best Practices
+
+<Warning>
+  Keep finalize callbacks simple and synchronous. Avoid complex operations or triggering new Observables within finalize.
+</Warning>
+
+- **Don't throw errors** in finalize callbacks - they'll be swallowed
+- **Keep it synchronous** - avoid async operations
+- **One responsibility** - each finalize should do one thing
+- **No subscriptions** - don't start new Observable subscriptions in finalize
+
+## Comparison: finalize vs tap
+
+Both can execute cleanup logic, but they differ:
+
+| Feature | finalize | tap with finalize callback |
+|---------|----------|---------------------------|
+| Syntax | `finalize(() => {})` | `tap({ finalize: () => {} })` |
+| Purpose | Dedicated cleanup operator | General side-effects operator |
+| Other features | None | next, error, complete, subscribe, unsubscribe |
+| Use when | You only need cleanup | You need multiple lifecycle hooks |
+
+```typescript
+// Using finalize
+source.pipe(
+  finalize(() => cleanup())
+)
+
+// Using tap - equivalent for finalize
+source.pipe(
+  tap({ finalize: () => cleanup() })
+)
+
+// tap allows additional hooks
+source.pipe(
+  tap({
+    next: value => log(value),
+    complete: () => console.log('Done'),
+    finalize: () => cleanup()
+  })
+)
+```
+
+## Error Handling
+
+<Note>
+  Errors thrown in the `finalize` callback are caught and swallowed. They won't propagate to subscribers.
+</Note>
+
+```typescript
+import { of, finalize } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  finalize(() => {
+    throw new Error('Oops!');
+    // This error is caught and ignored
+  })
+).subscribe({
+  next: console.log,
+  error: err => console.log('Error:', err),
+  complete: () => console.log('Complete')
+});
+
+// Output:
+// 1
+// 2
+// 3
+// Complete
+// (Error in finalize is swallowed)
+```
+
+## Related Operators
+
+- [tap](/api/operators/tap) - Perform side-effects (includes finalize callback)
+- [catchError](/api/operators/catchError) - Handle errors
+- [retry](/api/operators/retry) - Retry on error
+- [throwError](/api/observables/throwError) - Create error Observable
+
+## See Also
+
+- [RxJS finalize documentation](https://rxjs.dev/api/operators/finalize)
+- [Subscription and Teardown Guide](/guides/subscription)

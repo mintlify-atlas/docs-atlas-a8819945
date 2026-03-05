@@ -1,0 +1,882 @@
+---
+title: 'Deprecated APIs'
+description: 'Reference guide for all deprecated APIs in RxJS v7 and their recommended replacements'
+---
+
+# Deprecated APIs in RxJS v7
+
+This page documents all APIs that are deprecated in RxJS v7. These APIs still work but will be removed in RxJS v8. Migrate to the recommended alternatives as soon as possible.
+
+## Promise Conversion
+
+### toPromise()
+
+<Warning>
+  **Deprecated in v7, will be removed in v8**. Use `firstValueFrom()` or `lastValueFrom()` instead.
+</Warning>
+
+The `toPromise()` method has been deprecated because:
+
+1. The name doesn't indicate which value (first or last) will be used
+2. The return type `Promise<T | undefined>` can be confusing
+3. The behavior with empty observables is inconsistent
+
+#### Migration to lastValueFrom
+
+Use `lastValueFrom()` when you want the final emitted value:
+
+<CodeGroup>
+```ts toPromise() - Deprecated
+import { interval } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+async function example() {
+  const source$ = interval(1000).pipe(take(5));
+  const result = await source$.toPromise();
+  console.log(result); // 4 (last value)
+}
+```
+
+```ts lastValueFrom() - Recommended
+import { interval, lastValueFrom } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+async function example() {
+  const source$ = interval(1000).pipe(take(5));
+  const result = await lastValueFrom(source$);
+  console.log(result); // 4 (last value)
+}
+```
+</CodeGroup>
+
+#### Migration to firstValueFrom
+
+Use `firstValueFrom()` when you want the first emitted value:
+
+<CodeGroup>
+```ts When you want first value
+import { interval } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+async function example() {
+  // With toPromise, you'd need take(1)
+  const source$ = interval(1000).pipe(
+    map(x => x * 2),
+    take(1)
+  );
+  const result = await source$.toPromise();
+  console.log(result); // 0
+}
+```
+
+```ts firstValueFrom() - Better
+import { interval, firstValueFrom } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+async function example() {
+  const source$ = interval(1000).pipe(
+    map(x => x * 2)
+  );
+  const result = await firstValueFrom(source$);
+  console.log(result); // 0 (automatically unsubscribes)
+}
+```
+</CodeGroup>
+
+#### Handling Empty Observables
+
+<Accordion title="EmptyError vs. default values">
+<CodeGroup>
+```ts toPromise() behavior
+import { EMPTY } from 'rxjs';
+
+async function example() {
+  const result = await EMPTY.toPromise();
+  console.log(result); // undefined
+}
+```
+
+```ts lastValueFrom with default
+import { EMPTY, lastValueFrom } from 'rxjs';
+
+async function example() {
+  // Without default - throws EmptyError
+  try {
+    const result = await lastValueFrom(EMPTY);
+  } catch (err) {
+    console.error('EmptyError thrown');
+  }
+  
+  // With default - returns default value
+  const result = await lastValueFrom(EMPTY, { defaultValue: 0 });
+  console.log(result); // 0
+}
+```
+
+```ts firstValueFrom with default
+import { EMPTY, firstValueFrom } from 'rxjs';
+
+async function example() {
+  const result = await firstValueFrom(EMPTY, { defaultValue: 'none' });
+  console.log(result); // 'none'
+}
+```
+</CodeGroup>
+</Accordion>
+
+<Note>
+  **Warning**: Only use these functions with observables that will complete. For potentially infinite observables, add `timeout`, `take`, `takeWhile`, or `takeUntil` to prevent memory leaks.
+</Note>
+
+## Subscribe Arguments
+
+### Multiple Function Arguments
+
+<Warning>
+  **Deprecated in v6.4, will be removed in v8**. Use observer objects instead of multiple function arguments.
+</Warning>
+
+Passing multiple function arguments to `subscribe()` is deprecated. This affects both `subscribe()` and the `tap` operator.
+
+#### Why This Was Deprecated
+
+1. **Readability**: `subscribe(doSomething, doSomethingElse, lol)` is unclear
+2. **Future flexibility**: Second argument may be used for configuration (`AbortSignal`, etc.)
+3. **Null confusion**: `subscribe(null, null, onComplete)` is hard to read
+
+#### Migration Examples
+
+<CodeGroup>
+```ts Deprecated - All callbacks
+import { of } from 'rxjs';
+
+of(1, 2, 3).subscribe(
+  value => console.log(value),
+  err => console.error(err),
+  () => console.log('complete')
+);
+```
+
+```ts Recommended - Observer object
+import { of } from 'rxjs';
+
+of(1, 2, 3).subscribe({
+  next: value => console.log(value),
+  error: err => console.error(err),
+  complete: () => console.log('complete')
+});
+```
+</CodeGroup>
+
+<CodeGroup>
+```ts Deprecated - Error only
+import { throwError } from 'rxjs';
+
+throwError(() => new Error('oops')).subscribe(
+  null,
+  err => console.error(err)
+);
+```
+
+```ts Recommended - Error only
+import { throwError } from 'rxjs';
+
+throwError(() => new Error('oops')).subscribe({
+  error: err => console.error(err)
+});
+```
+</CodeGroup>
+
+<CodeGroup>
+```ts Deprecated - Complete only
+import { EMPTY } from 'rxjs';
+
+EMPTY.subscribe(
+  null,
+  null,
+  () => console.log('complete')
+);
+```
+
+```ts Recommended - Complete only
+import { EMPTY } from 'rxjs';
+
+EMPTY.subscribe({
+  complete: () => console.log('complete')
+});
+```
+</CodeGroup>
+
+<Note>
+  **Single next callback is still fine**: `of(1, 2, 3).subscribe(v => console.log(v))` is the recommended pattern when you only need the next callback.
+</Note>
+
+#### tap Operator
+
+The same deprecation applies to `tap`:
+
+<CodeGroup>
+```ts Deprecated
+import { of } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  tap(
+    v => console.log('next:', v),
+    err => console.error('error:', err),
+    () => console.log('complete')
+  )
+).subscribe();
+```
+
+```ts Recommended
+import { of } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  tap({
+    next: v => console.log('next:', v),
+    error: err => console.error('error:', err),
+    complete: () => console.log('complete')
+  })
+).subscribe();
+```
+</CodeGroup>
+
+## Multicasting APIs
+
+<Warning>
+  **Deprecated in v7, will be removed in v8**. Multicasting APIs have been simplified to `connectable`, `connect`, and `share`.
+</Warning>
+
+### ConnectableObservable
+
+<CodeGroup>
+```ts Deprecated
+import { ConnectableObservable, timer, Subject } from 'rxjs';
+
+const tick$ = new ConnectableObservable(
+  timer(1000),
+  () => new Subject()
+);
+tick$.connect();
+```
+
+```ts Recommended - connectable
+import { connectable, timer, Subject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new Subject()
+});
+tick$.connect();
+```
+
+```ts Recommended - share with refCount
+import { timer, share, Subject } from 'rxjs';
+
+// If using refCount
+const tick$ = timer(1000).pipe(
+  share({ connector: () => new Subject() })
+);
+```
+</CodeGroup>
+
+### multicast
+
+<Accordion title="multicast with subject factory">
+<CodeGroup>
+```ts Deprecated
+import { timer, multicast, Subject, ConnectableObservable } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  multicast(() => new Subject())
+) as ConnectableObservable<number>;
+tick$.connect();
+```
+
+```ts Recommended
+import { connectable, timer, Subject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new Subject()
+});
+tick$.connect();
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="multicast with subject instance">
+<CodeGroup>
+```ts Deprecated
+import { timer, multicast, Subject, ConnectableObservable } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  multicast(new Subject())
+) as ConnectableObservable<number>;
+tick$.connect();
+```
+
+```ts Recommended
+import { connectable, timer, Subject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new Subject(),
+  resetOnDisconnect: false // Matches behavior
+});
+tick$.connect();
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="multicast with refCount">
+<CodeGroup>
+```ts Deprecated
+import { timer, multicast, Subject, refCount } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  multicast(() => new Subject()),
+  refCount()
+);
+```
+
+```ts Recommended
+import { timer, share, Subject } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  share({ connector: () => new Subject() })
+);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="multicast with selector">
+<CodeGroup>
+```ts Deprecated
+import { timer, multicast, Subject, combineLatest } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  multicast(
+    () => new Subject(),
+    source => combineLatest([source, source])
+  )
+);
+```
+
+```ts Recommended
+import { timer, connect, combineLatest, Subject } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  connect(
+    source => combineLatest([source, source]),
+    { connector: () => new Subject() }
+  )
+);
+```
+</CodeGroup>
+</Accordion>
+
+### publish Variants
+
+<Accordion title="publish">
+<CodeGroup>
+```ts Deprecated
+import { timer, publish, ConnectableObservable } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  publish()
+) as ConnectableObservable<number>;
+tick$.connect();
+```
+
+```ts Recommended - connectable
+import { connectable, timer, Subject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new Subject(),
+  resetOnDisconnect: false
+});
+tick$.connect();
+```
+
+```ts Recommended - share with refCount
+import { timer, share } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  share({
+    resetOnError: false,
+    resetOnComplete: false,
+    resetOnRefCountZero: false
+  })
+);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="publishBehavior">
+<CodeGroup>
+```ts Deprecated
+import { timer, publishBehavior, ConnectableObservable } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  publishBehavior(0)
+) as ConnectableObservable<number>;
+tick$.connect();
+```
+
+```ts Recommended
+import { connectable, timer, BehaviorSubject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new BehaviorSubject(0),
+  resetOnDisconnect: false
+});
+tick$.connect();
+```
+
+```ts Recommended - with refCount
+import { timer, share, BehaviorSubject } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  share({
+    connector: () => new BehaviorSubject(0),
+    resetOnError: false,
+    resetOnComplete: false,
+    resetOnRefCountZero: false
+  })
+);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="publishLast">
+<CodeGroup>
+```ts Deprecated
+import { timer, publishLast, ConnectableObservable } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  publishLast()
+) as ConnectableObservable<number>;
+tick$.connect();
+```
+
+```ts Recommended
+import { connectable, timer, AsyncSubject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new AsyncSubject(),
+  resetOnDisconnect: false
+});
+tick$.connect();
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="publishReplay">
+<CodeGroup>
+```ts Deprecated
+import { timer, publishReplay, ConnectableObservable } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  publishReplay(2)
+) as ConnectableObservable<number>;
+tick$.connect();
+```
+
+```ts Recommended
+import { connectable, timer, ReplaySubject } from 'rxjs';
+
+const tick$ = connectable(timer(1000), {
+  connector: () => new ReplaySubject(2),
+  resetOnDisconnect: false
+});
+tick$.connect();
+```
+
+```ts Alternative - shareReplay
+import { timer, shareReplay } from 'rxjs';
+
+// shareReplay is a thin wrapper around share
+const tick$ = timer(1000).pipe(
+  shareReplay(2)
+);
+```
+</CodeGroup>
+</Accordion>
+
+### refCount
+
+<CodeGroup>
+```ts Deprecated
+import { timer, publish, refCount } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  publish(),
+  refCount()
+);
+```
+
+```ts Recommended
+import { timer, share } from 'rxjs';
+
+const tick$ = timer(1000).pipe(
+  share({
+    resetOnError: false,
+    resetOnComplete: false,
+    resetOnRefCountZero: false
+  })
+);
+```
+</CodeGroup>
+
+## Scheduler Argument
+
+<Warning>
+  **Deprecated in v6.5, will be removed in v8**. Use `scheduled()` function instead of scheduler arguments.
+</Warning>
+
+### Affected Operators
+
+- `from`, `of`, `merge`, `concat`
+- `startWith`, `endWith`
+- `combineLatest`
+
+### Migration to scheduled
+
+<Accordion title="of and from">
+<CodeGroup>
+```ts Deprecated - of
+import { of, asyncScheduler } from 'rxjs';
+
+of(1, 2, 3, asyncScheduler).subscribe(console.log);
+```
+
+```ts Recommended - scheduled
+import { scheduled, asyncScheduler } from 'rxjs';
+
+scheduled([1, 2, 3], asyncScheduler).subscribe(console.log);
+```
+</CodeGroup>
+
+<CodeGroup>
+```ts Deprecated - from
+import { from, asyncScheduler } from 'rxjs';
+
+from([1, 2, 3], asyncScheduler).subscribe(console.log);
+```
+
+```ts Recommended - scheduled
+import { scheduled, asyncScheduler } from 'rxjs';
+
+scheduled([1, 2, 3], asyncScheduler).subscribe(console.log);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="concat">
+<CodeGroup>
+```ts Deprecated
+import { concat, of, asyncScheduler } from 'rxjs';
+
+concat(
+  of('hello'),
+  of('world'),
+  asyncScheduler
+).subscribe(console.log);
+```
+
+```ts Recommended
+import { scheduled, of, asyncScheduler } from 'rxjs';
+import { concatAll } from 'rxjs/operators';
+
+scheduled(
+  [of('hello'), of('world')],
+  asyncScheduler
+).pipe(
+  concatAll()
+).subscribe(console.log);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="merge">
+<CodeGroup>
+```ts Deprecated
+import { merge, of, asyncScheduler } from 'rxjs';
+
+merge(
+  of(1, 2),
+  of(3, 4),
+  asyncScheduler
+).subscribe(console.log);
+```
+
+```ts Recommended
+import { scheduled, of, asyncScheduler } from 'rxjs';
+import { mergeAll } from 'rxjs/operators';
+
+scheduled(
+  [of(1, 2), of(3, 4)],
+  asyncScheduler
+).pipe(
+  mergeAll()
+).subscribe(console.log);
+```
+</CodeGroup>
+</Accordion>
+
+<Accordion title="combineLatest">
+<CodeGroup>
+```ts Deprecated
+import { combineLatest, of, asyncScheduler } from 'rxjs';
+
+combineLatest(
+  of('hello'),
+  of('world'),
+  asyncScheduler
+).subscribe(console.log);
+```
+
+```ts Recommended
+import { scheduled, of, asyncScheduler } from 'rxjs';
+import { combineLatestAll } from 'rxjs/operators';
+
+scheduled(
+  [of('hello'), of('world')],
+  asyncScheduler
+).pipe(
+  combineLatestAll()
+).subscribe(console.log);
+```
+</CodeGroup>
+</Accordion>
+
+## ResultSelector Parameter
+
+<Warning>
+  **Deprecated in v6.0, will be removed in v8**. Use `map` operator instead of `resultSelector` parameter.
+</Warning>
+
+### Why It Was Deprecated
+
+1. Increases bundle size for every operator
+2. Can cause memory pressure by retaining values
+3. Same functionality available via `map`
+
+### Affected Operators
+
+- `concatMap`, `concatMapTo`
+- `exhaustMap`
+- `mergeMap`, `mergeMapTo`
+- `switchMap`, `switchMapTo`
+
+### Migration Examples
+
+<CodeGroup>
+```ts Deprecated - switchMap
+import { fromEvent, switchMap, interval } from 'rxjs';
+
+fromEvent(document, 'click').pipe(
+  switchMap(
+    () => interval(1000),
+    (outer, inner) => inner + 1 // resultSelector
+  )
+).subscribe(console.log);
+```
+
+```ts Recommended - map
+import { fromEvent, switchMap, interval } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+fromEvent(document, 'click').pipe(
+  switchMap(() =>
+    interval(1000).pipe(
+      map(inner => inner + 1)
+    )
+  )
+).subscribe(console.log);
+```
+</CodeGroup>
+
+<CodeGroup>
+```ts Deprecated - mergeMap
+import { of, mergeMap } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  mergeMap(
+    x => of(x * 10),
+    (outer, inner) => ({ outer, inner }) // resultSelector
+  )
+).subscribe(console.log);
+```
+
+```ts Recommended - map
+import { of, mergeMap } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+of(1, 2, 3).pipe(
+  mergeMap(x =>
+    of(x * 10).pipe(
+      map(inner => ({ outer: x, inner }))
+    )
+  )
+).subscribe(console.log);
+```
+</CodeGroup>
+
+## Array Arguments
+
+<Warning>
+  **Deprecated in v6.5**. Pass arrays or objects instead of multiple arguments.
+</Warning>
+
+### Affected Operators
+
+- `combineLatest`
+- `forkJoin`
+
+### Migration Examples
+
+<CodeGroup>
+```ts Deprecated
+import { forkJoin, of } from 'rxjs';
+
+const odd$ = of(1, 3, 5);
+const even$ = of(2, 4, 6);
+
+forkJoin(odd$, even$).subscribe(console.log);
+```
+
+```ts Recommended - Array
+import { forkJoin, of } from 'rxjs';
+
+const odd$ = of(1, 3, 5);
+const even$ = of(2, 4, 6);
+
+forkJoin([odd$, even$]).subscribe(console.log);
+```
+
+```ts Recommended - Object
+import { forkJoin, of } from 'rxjs';
+
+const odd$ = of(1, 3, 5);
+const even$ = of(2, 4, 6);
+
+forkJoin({
+  odd: odd$,
+  even: even$
+}).subscribe(console.log); // { odd: 5, even: 6 }
+```
+</CodeGroup>
+
+<CodeGroup>
+```ts Deprecated - combineLatest
+import { combineLatest, of } from 'rxjs';
+
+combineLatest(
+  of(1),
+  of('a'),
+  of(true)
+).subscribe(console.log);
+```
+
+```ts Recommended - Array
+import { combineLatest, of } from 'rxjs';
+
+combineLatest([
+  of(1),
+  of('a'),
+  of(true)
+]).subscribe(console.log); // [1, 'a', true]
+```
+
+```ts Recommended - Object  
+import { combineLatest, of } from 'rxjs';
+
+combineLatest({
+  num: of(1),
+  str: of('a'),
+  bool: of(true)
+}).subscribe(console.log); // { num: 1, str: 'a', bool: true }
+```
+</CodeGroup>
+
+## Deprecated Operators
+
+### concat, merge, zip, race (Pipeable)
+
+<Warning>
+  The pipeable versions of `concat`, `merge`, `zip`, and `race` are deprecated. Use the new `-With` variants.
+</Warning>
+
+<CodeGroup>
+```ts Deprecated
+import { of } from 'rxjs';
+import { concat, merge, zip, race } from 'rxjs/operators';
+
+of(1).pipe(concat(of(2))).subscribe();
+of(1).pipe(merge(of(2))).subscribe();
+of(1).pipe(zip(of(2))).subscribe();
+of(1).pipe(race(of(2))).subscribe();
+```
+
+```ts Recommended
+import { of } from 'rxjs';
+import { concatWith, mergeWith, zipWith, raceWith } from 'rxjs/operators';
+
+of(1).pipe(concatWith(of(2))).subscribe();
+of(1).pipe(mergeWith(of(2))).subscribe();
+of(1).pipe(zipWith(of(2))).subscribe();
+of(1).pipe(raceWith(of(2))).subscribe();
+```
+</CodeGroup>
+
+## Migration Timeline
+
+<Steps>
+  <Step title="RxJS v6.4 (2019)">
+    Subscribe arguments deprecated
+  </Step>
+
+  <Step title="RxJS v6.5 (2019)">
+    - Scheduler arguments deprecated
+    - Array arguments pattern introduced
+    - ResultSelector deprecated
+  </Step>
+
+  <Step title="RxJS v7 (2021)">
+    - All v6 deprecations still functional
+    - toPromise() deprecated
+    - Multicasting APIs deprecated
+    - New replacement APIs introduced
+  </Step>
+
+  <Step title="RxJS v8 (Future)">
+    All deprecated APIs will be removed
+  </Step>
+</Steps>
+
+## Quick Reference
+
+| Deprecated API | Replacement | Version |
+|----------------|-------------|----------|
+| `toPromise()` | `firstValueFrom()` / `lastValueFrom()` | v7 → v8 |
+| `subscribe(fn, fn, fn)` | `subscribe({ next, error, complete })` | v6.4 → v8 |
+| `multicast()` | `connectable()` / `share()` | v7 → v8 |
+| `publish()` | `connectable()` / `share()` | v7 → v8 |
+| `publishBehavior()` | `connectable()` with `BehaviorSubject` | v7 → v8 |
+| `publishLast()` | `connectable()` with `AsyncSubject` | v7 → v8 |
+| `publishReplay()` | `connectable()` / `shareReplay()` | v7 → v8 |
+| `refCount()` | `share()` | v7 → v8 |
+| `of(..., scheduler)` | `scheduled([...], scheduler)` | v6.5 → v8 |
+| `resultSelector` parameter | `map()` operator | v6.0 → v8 |
+| `combineLatest(a, b)` | `combineLatest([a, b])` | v6.5 → v8 |
+| `concat` operator | `concatWith` | v7 → v8 |
+| `merge` operator | `mergeWith` | v7 → v8 |
+| `zip` operator | `zipWith` | v7 → v8 |
+| `race` operator | `raceWith` | v7 → v8 |
+
+## Additional Resources
+
+- [Migration Guide](/migration/v6-to-v7) - Complete migration instructions
+- [Breaking Changes](/migration/breaking-changes) - All breaking changes in v7
+- [RxJS Changelog](https://github.com/ReactiveX/rxjs/blob/master/CHANGELOG.md) - Official changelog

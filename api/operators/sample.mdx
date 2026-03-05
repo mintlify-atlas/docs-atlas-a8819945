@@ -1,0 +1,317 @@
+---
+title: sample
+description: Samples the source Observable whenever another Observable emits
+---
+
+## Overview
+
+Emits the most recently emitted value from the source Observable whenever another Observable, the `notifier`, emits.
+
+<Note>
+`sample` only emits when the notifier emits **and** the source has emitted at least one value since the last sample. If the source hasn't emitted anything, nothing is sampled.
+</Note>
+
+## Type Signature
+
+```typescript
+function sample<T>(
+  notifier: ObservableInput<any>
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="notifier" type="ObservableInput<any>" required>
+  The ObservableInput to use for sampling the source Observable.
+  
+  Whenever this Observable emits a value (or completes), `sample` looks at the source and emits its most recent value (if any).
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits the results of sampling the values emitted by the source Observable whenever the notifier Observable emits or completes.
+
+## How It Works
+
+1. Subscribes to both the **source** and **notifier** Observables
+2. Caches the most recent value from the source (if any)
+3. When the notifier **emits**:
+   - If source has emitted at least one value since last sample: **emits** the cached value
+   - If source hasn't emitted: **does nothing**
+4. Clears the cache after emitting
+5. Completes when the source completes
+
+<Tip>
+Think of `sample` as taking a "snapshot" of the source value whenever the notifier signals.
+</Tip>
+
+## Usage Examples
+
+### Basic Example: Sample on Click
+
+```typescript
+import { fromEvent, interval, sample } from 'rxjs';
+
+const seconds = interval(1000);
+const clicks = fromEvent(document, 'click');
+const result = seconds.pipe(sample(clicks));
+
+result.subscribe(x => console.log(x));
+// Every time you click, it logs the current second count
+```
+
+### Sample Mouse Position on Key Press
+
+```typescript
+import { fromEvent, sample, map } from 'rxjs';
+
+const mouseMoves$ = fromEvent<MouseEvent>(document, 'mousemove').pipe(
+  map(e => ({ x: e.clientX, y: e.clientY }))
+);
+
+const keyPress$ = fromEvent(document, 'keypress');
+
+const sampledPosition$ = mouseMoves$.pipe(
+  sample(keyPress$)
+);
+
+sampledPosition$.subscribe(pos => {
+  console.log('Mouse position at keypress:', pos);
+});
+```
+
+### Sample Form Values on Submit
+
+```typescript
+import { fromEvent, sample, map } from 'rxjs';
+
+const input = document.querySelector('#search') as HTMLInputElement;
+const button = document.querySelector('#submit') as HTMLButtonElement;
+
+const inputChanges$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value)
+);
+
+const buttonClicks$ = fromEvent(button, 'click');
+
+const submittedValues$ = inputChanges$.pipe(
+  sample(buttonClicks$)
+);
+
+submittedValues$.subscribe(value => {
+  console.log('Submitted value:', value);
+  performSearch(value);
+});
+```
+
+<CodeGroup>
+```typescript Periodic Sampling
+import { fromEvent, sample, interval } from 'rxjs';
+
+const scrolls$ = fromEvent(window, 'scroll');
+const sampler$ = interval(1000); // Sample every second
+
+const sampledScrolls$ = scrolls$.pipe(
+  sample(sampler$)
+);
+
+sampledScrolls$.subscribe(() => {
+  const scrollY = window.scrollY;
+  console.log('Scroll position (sampled):', scrollY);
+  // Update scroll indicator
+});
+```
+
+```typescript User Activity Monitoring
+import { merge, sample, interval, fromEvent } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+const keypress$ = fromEvent(document, 'keypress');
+const moves$ = fromEvent(document, 'mousemove');
+
+const activity$ = merge(clicks$, keypress$, moves$);
+const sampler$ = interval(5000); // Check every 5 seconds
+
+const activityCheck$ = activity$.pipe(
+  sample(sampler$)
+);
+
+activityCheck$.subscribe(() => {
+  console.log('User active in last 5 seconds');
+  resetIdleTimer();
+});
+```
+
+```typescript Sample API Status
+import { sample, interval } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const status$ = ajax.getJSON('/api/status');
+const sampler$ = interval(10000); // Sample every 10 seconds
+
+const sampledStatus$ = status$.pipe(
+  sample(sampler$)
+);
+
+sampledStatus$.subscribe(status => {
+  console.log('Current status:', status);
+  updateStatusIndicator(status);
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `sample` when:
+- You want to **sample a fast stream** at specific trigger points
+- Reducing **event frequency** based on another event
+- **User-triggered sampling** (click to capture current state)
+- **Event-driven** rate limiting
+
+### Don't use `sample` when:
+- You need **time-based** sampling (use `sampleTime` instead)
+- You want **every value** from the source
+- You need the **first** value in a window (use `throttle`)
+- You need the **last** value after silence (use `debounce`)
+
+## Common Patterns
+
+### Capture State on Demand
+
+```typescript
+import { BehaviorSubject, sample, fromEvent } from 'rxjs';
+
+const state$ = new BehaviorSubject({ count: 0, status: 'idle' });
+const captureButton$ = fromEvent(
+  document.querySelector('#capture') as HTMLButtonElement,
+  'click'
+);
+
+const capturedState$ = state$.pipe(
+  sample(captureButton$)
+);
+
+capturedState$.subscribe(state => {
+  console.log('Captured state:', state);
+  saveSnapshot(state);
+});
+```
+
+### Sample on Multiple Events
+
+```typescript
+import { fromEvent, sample, merge } from 'rxjs';
+
+const temperature$ = getTemperatureStream();
+
+const button1$ = fromEvent(document.querySelector('#sample1')!, 'click');
+const button2$ = fromEvent(document.querySelector('#sample2')!, 'click');
+const timer$ = interval(30000); // Auto-sample every 30s
+
+const samplers$ = merge(button1$, button2$, timer$);
+
+const sampledTemp$ = temperature$.pipe(
+  sample(samplers$)
+);
+
+sampledTemp$.subscribe(temp => {
+  console.log('Temperature sample:', temp);
+});
+```
+
+### Manual Refresh Trigger
+
+```typescript
+import { sample, Subject, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const refresh$ = new Subject<void>();
+const data$ = ajax.getJSON('/api/data');
+
+const refreshableData$ = data$.pipe(
+  sample(refresh$)
+);
+
+refreshableData$.subscribe(data => {
+  console.log('Refreshed data:', data);
+  displayData(data);
+});
+
+// Trigger refresh manually
+function refreshData() {
+  refresh$.next();
+}
+```
+
+<Warning>
+If the notifier emits before the source has emitted anything, no value will be sampled (nothing happens).
+</Warning>
+
+### Sample Latest Value
+
+```typescript
+import { interval, sample, Subject } from 'rxjs';
+
+const counter$ = interval(100); // Fast counter
+const sampler$ = new Subject<void>();
+
+const sampled$ = counter$.pipe(
+  sample(sampler$)
+);
+
+sampled$.subscribe(count => {
+  console.log('Current count:', count);
+});
+
+// Sample at different times
+setTimeout(() => sampler$.next(), 500);  // ~5
+setTimeout(() => sampler$.next(), 1200); // ~12
+setTimeout(() => sampler$.next(), 2000); // ~20
+```
+
+## Behavior with Notifier Completion
+
+When the notifier **completes**, it triggers one final sample:
+
+```typescript
+import { interval, sample, take } from 'rxjs';
+
+const source$ = interval(100);
+const notifier$ = interval(500).pipe(take(3)); // Emits 3 times then completes
+
+const sampled$ = source$.pipe(
+  sample(notifier$)
+);
+
+sampled$.subscribe(
+  value => console.log('Sampled:', value),
+  err => console.error('Error:', err),
+  () => console.log('Complete')
+);
+// Output:
+// Sampled: ~4 (at 500ms)
+// Sampled: ~9 (at 1000ms)
+// Sampled: ~14 (at 1500ms)
+// Complete (source continues but notifier completed)
+```
+
+<Tip>
+Combine `sample` with `distinctUntilChanged` to avoid emitting duplicate samples when the source value hasn't changed.
+</Tip>
+
+## Comparison with Similar Operators
+
+| Operator | Trigger | Timing |
+|----------|---------|--------|
+| `sample` | **Another Observable** emits | Event-driven |
+| `sampleTime` | **Fixed interval** | Time-based |
+| `audit` | **Duration Observable** completes | After waiting period |
+| `throttle` | **First** value + duration | Rate-limiting |
+
+## Related Operators
+
+- **[sampleTime](/api/operators/sampleTime)** - Sample at fixed time intervals
+- **[audit](/api/operators/audit)** - Similar but uses duration Observable
+- **[auditTime](/api/operators/auditTime)** - Time-based audit
+- **[throttle](/api/operators/throttle)** - Rate-limit with first value
+- **[debounce](/api/operators/debounce)** - Wait for silence

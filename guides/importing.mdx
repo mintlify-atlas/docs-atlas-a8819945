@@ -1,0 +1,293 @@
+---
+title: 'Importing RxJS'
+description: 'Learn the different ways to import and use RxJS in your projects'
+---
+
+There are different ways to import RxJS depending on your version and build setup. Understanding the import patterns helps you take advantage of tree-shaking and optimize your bundle size.
+
+## Modern Import Patterns (v7.2.0+)
+
+<Note>
+  Starting with RxJS v7.2.0, most operators have been moved to the main `'rxjs'` export site. 
+  The `'rxjs/operators'` export site is now deprecated.
+</Note>
+
+The preferred way to import operators is now from `'rxjs'`:
+
+<CodeGroup>
+```typescript Named Imports
+import { of, map, filter, take } from 'rxjs';
+
+of(1, 2, 3, 4, 5)
+  .pipe(
+    filter(x => x % 2 === 0),
+    map(x => x * 2),
+    take(2)
+  )
+  .subscribe(console.log);
+// Output: 4, 8
+```
+
+```typescript Namespace Import
+import * as rxjs from 'rxjs';
+
+rxjs.of(1, 2, 3)
+  .pipe(rxjs.map(x => x + '!!!'))
+  .subscribe(console.log);
+```
+
+```javascript Global Bundle
+const { of, map, filter } = rxjs;
+
+of(1, 2, 3)
+  .pipe(
+    filter(x => x > 1),
+    map(x => x * x)
+  )
+  .subscribe(console.log);
+```
+</CodeGroup>
+
+## Export Sites
+
+RxJS v7 provides 6 different export locations for different functionality:
+
+<Steps>
+  <Step title="rxjs - Core Library">
+    The main export site includes Observable, operators, creation functions, subjects, and schedulers.
+    
+    ```typescript
+    import { Observable, of, map, Subject, asyncScheduler } from 'rxjs';
+    ```
+  </Step>
+
+  <Step title="rxjs/operators - Legacy Operators">
+    Deprecated location for operators. Only contains legacy operators that have been replaced.
+    
+    ```typescript
+    // Avoid this - use the new operators from 'rxjs' instead
+    import { map } from 'rxjs/operators';
+    ```
+  </Step>
+
+  <Step title="rxjs/ajax - AJAX Utilities">
+    Specialized exports for making AJAX requests.
+    
+    ```typescript
+    import { ajax } from 'rxjs/ajax';
+    
+    ajax.getJSON('https://api.example.com/data')
+      .subscribe(data => console.log(data));
+    ```
+  </Step>
+
+  <Step title="rxjs/fetch - Fetch API">
+    Observables for the Fetch API.
+    
+    ```typescript
+    import { fromFetch } from 'rxjs/fetch';
+    import { switchMap, catchError } from 'rxjs';
+    
+    fromFetch('https://api.example.com/data')
+      .pipe(
+        switchMap(response => response.json()),
+        catchError(err => of({ error: err.message }))
+      )
+      .subscribe(result => console.log(result));
+    ```
+  </Step>
+
+  <Step title="rxjs/webSocket - WebSocket">
+    Observable-based WebSocket implementation.
+    
+    ```typescript
+    import { webSocket } from 'rxjs/webSocket';
+    
+    const socket$ = webSocket('ws://localhost:8081');
+    
+    socket$.subscribe(
+      msg => console.log('message received: ' + msg),
+      err => console.log(err),
+      () => console.log('complete')
+    );
+    
+    socket$.next({ message: 'Hello Server!' });
+    ```
+  </Step>
+
+  <Step title="rxjs/testing - Test Utilities">
+    Testing utilities including TestScheduler for marble testing.
+    
+    ```typescript
+    import { TestScheduler } from 'rxjs/testing';
+    
+    const testScheduler = new TestScheduler((actual, expected) => {
+      expect(actual).toEqual(expected);
+    });
+    ```
+  </Step>
+</Steps>
+
+## Tree-Shaking Benefits
+
+<Tip>
+  Modern bundlers like Webpack, Rollup, and esbuild automatically eliminate unused code when you use ES module imports.
+</Tip>
+
+By importing only what you need, you can significantly reduce your bundle size:
+
+```typescript
+// Good: Only includes Observable, of, and map in your bundle
+import { of, map } from 'rxjs';
+
+const result$ = of(1, 2, 3).pipe(map(x => x * 2));
+```
+
+```typescript
+// Avoid: Imports the entire RxJS library
+import * as rxjs from 'rxjs';
+// Even if you only use a few operators, all exports are included in the bundle
+```
+
+## Migrating from Legacy Operators
+
+Some operators from `'rxjs/operators'` have been deprecated and replaced:
+
+<Accordion title="Deprecated Operators Migration Guide">
+  | Legacy Operator | Static Creation | New Operator Name |
+  |----------------|-----------------|-------------------|
+  | `combineLatest` | `combineLatest` | `combineLatestWith` |
+  | `concat` | `concat` | `concatWith` |
+  | `merge` | `merge` | `mergeWith` |
+  | `onErrorResumeNext` | `onErrorResumeNext` | `onErrorResumeNextWith` |
+  | `race` | `race` | `raceWith` |
+  | `zip` | `zip` | `zipWith` |
+</Accordion>
+
+<CodeGroup>
+```typescript Old Way (Deprecated)
+import { merge } from 'rxjs/operators';
+
+a$.pipe(merge(b$)).subscribe();
+```
+
+```typescript New Static Creation
+import { merge } from 'rxjs';
+
+merge(a$, b$).subscribe();
+```
+
+```typescript New Pipeable Operator
+import { mergeWith } from 'rxjs';
+
+a$.pipe(mergeWith(b$)).subscribe();
+```
+</CodeGroup>
+
+## CommonJS vs ESM
+
+<Warning>
+  RxJS is primarily designed for ES modules. CommonJS support is maintained for compatibility but may have larger bundle sizes.
+</Warning>
+
+<CodeGroup>
+```typescript ESM (Recommended)
+import { of, map } from 'rxjs';
+
+of(1, 2, 3)
+  .pipe(map(x => x * x))
+  .subscribe(console.log);
+```
+
+```javascript CommonJS
+const { of, map } = require('rxjs');
+
+of(1, 2, 3)
+  .pipe(map(x => x * x))
+  .subscribe(console.log);
+```
+</CodeGroup>
+
+## TypeScript Configuration
+
+For optimal TypeScript support, ensure your `tsconfig.json` includes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2015",
+    "module": "ES2015",
+    "moduleResolution": "node",
+    "lib": ["ES2015", "DOM"],
+    "esModuleInterop": true
+  }
+}
+```
+
+## CDN Usage
+
+<Note>
+  When using RxJS from a CDN, all exports are available under the global `rxjs` namespace.
+</Note>
+
+```html
+<!-- Include RxJS from CDN -->
+<script src="https://unpkg.com/rxjs@7/dist/bundles/rxjs.umd.min.js"></script>
+
+<script>
+  const { of, map, filter } = rxjs;
+  
+  of(1, 2, 3, 4, 5)
+    .pipe(
+      filter(x => x % 2 === 0),
+      map(x => x * 2)
+    )
+    .subscribe(x => console.log(x));
+</script>
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Named Imports">
+    Import only what you need for optimal tree-shaking:
+    
+    ```typescript
+    import { of, map, filter } from 'rxjs';
+    ```
+  </Step>
+
+  <Step title="Avoid Namespace Imports in Production">
+    Namespace imports can prevent tree-shaking:
+    
+    ```typescript
+    // Avoid in production code
+    import * as rxjs from 'rxjs';
+    ```
+  </Step>
+
+  <Step title="Group Related Imports">
+    Organize imports by functionality:
+    
+    ```typescript
+    // Creation functions
+    import { of, from, interval } from 'rxjs';
+    
+    // Operators
+    import { map, filter, take, debounceTime } from 'rxjs';
+    
+    // Subjects
+    import { Subject, BehaviorSubject } from 'rxjs';
+    ```
+  </Step>
+
+  <Step title="Use Subpath Imports for Specialized Features">
+    Keep your bundle lean by using subpath imports:
+    
+    ```typescript
+    import { ajax } from 'rxjs/ajax';
+    import { webSocket } from 'rxjs/webSocket';
+    import { TestScheduler } from 'rxjs/testing';
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,141 @@
+---
+title: 'timer'
+description: 'Creates an Observable that waits for a specified time before emitting'
+---
+
+# timer
+
+Creates an Observable that waits for a specified time period or exact date before emitting.
+
+## Import
+
+```typescript
+import { timer } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+// One-time emission
+function timer(due: number | Date, scheduler?: SchedulerLike): Observable<0>;
+
+// Recurring emissions
+function timer(
+  startDue: number | Date,
+  intervalDuration: number,
+  scheduler?: SchedulerLike
+): Observable<number>;
+```
+
+## Parameters
+
+<ParamField path="due" type="number | Date" required>
+  If a number, the amount of time in milliseconds to wait before emitting. If a Date, the exact time at which to emit.
+</ParamField>
+
+<ParamField path="intervalDuration" type="number">
+  Optional interval duration. If provided, continues emitting incrementing numbers at this interval.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The scheduler to use for scheduling emissions.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<number>">
+  An Observable that:
+  - Emits 0 after the initial delay (one-time)
+  - Emits 0, 1, 2, ... at intervals (recurring)
+</ResponseField>
+
+## Description
+
+`timer` creates an Observable that waits for a delay, then optionally repeats at intervals.
+
+## Examples
+
+### One-time Delay
+
+```typescript
+import { timer, concatMap, of } from 'rxjs';
+
+const source = of(1, 2, 3);
+
+timer(3000).pipe(
+  concatMap(() => source)
+).subscribe(console.log);
+
+// Waits 3 seconds, then outputs: 1, 2, 3
+```
+
+### Recurring Interval
+
+```typescript
+import { timer } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+// Start immediately, repeat every second
+timer(0, 1000).pipe(take(5)).subscribe(x => console.log(x));
+
+// Output:
+// 0 (immediately)
+// 1 (after 1s)
+// 2 (after 2s)
+// 3 (after 3s)
+// 4 (after 4s)
+```
+
+### Schedule at Specific Time
+
+```typescript
+import { timer } from 'rxjs';
+
+const midnight = new Date();
+midnight.setHours(24, 0, 0, 0);
+
+timer(midnight).subscribe(() => {
+  console.log('It\'s midnight!');
+});
+```
+
+## Common Use Cases
+
+### Debounce Alternative
+
+```typescript
+import { fromEvent, timer } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+
+const input$ = fromEvent(input, 'input');
+
+input$.pipe(
+  switchMap(() => timer(300))
+).subscribe(() => {
+  console.log('User stopped typing');
+});
+```
+
+### Timeout Implementation
+
+```typescript
+import { timer, interval, race } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const data$ = interval(2000).pipe(map(() => 'data'));
+const timeout$ = timer(5000).pipe(map(() => 'timeout'));
+
+race(data$, timeout$).subscribe(result => {
+  console.log(result);
+});
+```
+
+## Related Operators
+
+- **[interval](/api/creation/interval)** - Emit at regular intervals
+- **[of](/api/creation/of)** - Emit values immediately
+- **delay** - Delay Observable emissions
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/timer)

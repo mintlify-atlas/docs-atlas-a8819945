@@ -1,80 +1,423 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start Guide
+description: Build your first RxJS application with practical examples and step-by-step guidance
 ---
 
-## Get started in three steps
+# Quick Start Guide
 
-Get your documentation site running locally and make your first customization.
+This guide will get you up and running with RxJS in minutes. You'll learn how to create Observables, transform data with operators, and handle real-world scenarios.
 
-### Step 1: Set up your local environment
+<Info>
+Make sure you've [installed RxJS](/installation) before following this guide.
+</Info>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+## Your First Observable
+
+Let's start with the simplest possible Observable that emits a sequence of values.
+
+<Steps>
+  <Step title="Create a new file">
+    Create a file called `app.ts` (or `app.js` if not using TypeScript):
+
+    ```typescript app.ts
+    import { of } from 'rxjs';
+
+    // Create an Observable that emits three values
+    const numbers$ = of(10, 20, 30);
+
+    // Subscribe to receive the values
+    numbers$.subscribe({
+      next: value => console.log('Received:', value),
+      error: err => console.error('Error:', err),
+      complete: () => console.log('Complete!')
+    });
+    ```
+
+    <Note>
+    The `$` suffix is a common naming convention for Observables, making them easy to identify in your code.
+    </Note>
+  </Step>
+
+  <Step title="Run your code">
+    Execute your file:
+
+    <CodeGroup>
+    ```bash Node.js (CommonJS)
+    node app.js
+    ```
+
+    ```bash TypeScript
+    npx ts-node app.ts
+    ```
+
+    ```bash Deno
+    deno run --allow-net app.ts
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="See the output">
+    You should see:
+    ```
+    Received: 10
+    Received: 20
+    Received: 30
+    Complete!
+    ```
+
+    Congratulations! You've created your first Observable.
+  </Step>
+</Steps>
+
+## Understanding the Observable
+
+An Observable is a lazy collection of values over time. Let's break down the anatomy:
+
+```typescript
+import { Observable } from 'rxjs';
+
+// Creating an Observable from scratch
+const custom$ = new Observable(subscriber => {
+  // Emit values
+  subscriber.next(1);
+  subscriber.next(2);
+  subscriber.next(3);
+  
+  // Signal completion
+  subscriber.complete();
+  
+  // Cleanup function (optional)
+  return () => {
+    console.log('Cleanup!');
+  };
+});
+
+custom$.subscribe({
+  next: value => console.log('Value:', value),
+  error: err => console.error('Error:', err),
+  complete: () => console.log('Done!')
+});
+```
+
+## Practical Example: Timer
+
+Let's create a timer that emits values every second:
+
+```typescript timer.ts
+import { interval, take } from 'rxjs';
+
+// Emit a value every 1000ms (1 second)
+const timer$ = interval(1000);
+
+// Take only the first 5 values
+const limitedTimer$ = timer$.pipe(take(5));
+
+limitedTimer$.subscribe({
+  next: value => console.log(`Tick ${value}`),
+  complete: () => console.log('Timer finished!')
+});
+
+// Output:
+// Tick 0
+// Tick 1
+// Tick 2
+// Tick 3
+// Tick 4
+// Timer finished!
+```
+
+<Tip>
+The `interval` function creates an Observable that emits sequential numbers starting from 0. The `take` operator limits the number of emissions.
+</Tip>
+
+## Transforming Data with Operators
+
+Operators are the real power of RxJS. They let you transform, filter, and combine Observables.
+
+<Steps>
+  <Step title="Map - Transform values">
+    ```typescript
+    import { of, map } from 'rxjs';
+
+    of(1, 2, 3, 4, 5)
+      .pipe(
+        map(x => x * 10)
+      )
+      .subscribe(value => console.log(value));
+
+    // Output: 10, 20, 30, 40, 50
+    ```
+  </Step>
+
+  <Step title="Filter - Remove values">
+    ```typescript
+    import { of, filter } from 'rxjs';
+
+    of(1, 2, 3, 4, 5)
+      .pipe(
+        filter(x => x % 2 === 0)
+      )
+      .subscribe(value => console.log(value));
+
+    // Output: 2, 4
+    ```
+  </Step>
+
+  <Step title="Chain multiple operators">
+    ```typescript
+    import { of, map, filter } from 'rxjs';
+
+    of(1, 2, 3, 4, 5)
+      .pipe(
+        map(x => x * 10),        // Multiply by 10
+        filter(x => x > 20),     // Keep values > 20
+        map(x => `Value: ${x}`)  // Format as string
+      )
+      .subscribe(value => console.log(value));
+
+    // Output:
+    // Value: 30
+    // Value: 40
+    // Value: 50
+    ```
+  </Step>
+</Steps>
+
+## Real-World Example: Search Input
+
+Here's a complete example showing how to handle a search input with debouncing and API calls:
+
+```typescript search.ts
+import { fromEvent, map, debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+import { of } from 'rxjs';
+
+// Get reference to input element
+const searchInput = document.getElementById('search') as HTMLInputElement;
+
+// Create observable from input events
+const search$ = fromEvent(searchInput, 'input').pipe(
+  // Extract the input value
+  map(event => (event.target as HTMLInputElement).value),
+  
+  // Wait 300ms after user stops typing
+  debounceTime(300),
+  
+  // Only emit if value changed
+  distinctUntilChanged(),
+  
+  // Switch to new search, canceling previous
+  switchMap(searchTerm => {
+    if (searchTerm.length === 0) {
+      return of([]);
+    }
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    return ajax(`https://api.example.com/search?q=${searchTerm}`).pipe(
+      map(response => response.response),
+      catchError(error => {
+        console.error('Search failed:', error);
+        return of([]);
+      })
+    );
+  })
+);
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+// Subscribe to search results
+search$.subscribe(results => {
+  console.log('Search results:', results);
+  // Update UI with results
+});
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+**What's happening here?**
+
+1. **fromEvent**: Converts DOM events into an Observable
+2. **debounceTime**: Waits for user to stop typing (300ms)
+3. **distinctUntilChanged**: Ignores duplicate search terms
+4. **switchMap**: Cancels previous API call if user types again
+5. **catchError**: Handles API errors gracefully
 </Note>
+
+## Complete Practical Example: Counter
+
+Let's build a simple counter application that demonstrates multiple RxJS concepts:
+
+```typescript counter.ts
+import { fromEvent, merge, scan, map, startWith } from 'rxjs';
+
+// HTML Setup
+// <button id="increment">+1</button>
+// <button id="decrement">-1</button>
+// <button id="reset">Reset</button>
+// <div id="count">0</div>
+
+// Get button references
+const incrementBtn = document.getElementById('increment')!;
+const decrementBtn = document.getElementById('decrement')!;
+const resetBtn = document.getElementById('reset')!;
+const countDisplay = document.getElementById('count')!;
+
+// Create observables from button clicks
+const increment$ = fromEvent(incrementBtn, 'click').pipe(map(() => 1));
+const decrement$ = fromEvent(decrementBtn, 'click').pipe(map(() => -1));
+const reset$ = fromEvent(resetBtn, 'click').pipe(map(() => 0));
+
+// Merge all button clicks into a single stream
+const counter$ = merge(
+  increment$,
+  decrement$,
+  reset$.pipe(map(() => null)) // null signals reset
+).pipe(
+  // Accumulate the count
+  scan((acc, value) => {
+    return value === null ? 0 : acc + value;
+  }, 0),
+  // Start with initial value
+  startWith(0)
+);
+
+// Subscribe and update the display
+counter$.subscribe(count => {
+  countDisplay.textContent = String(count);
+});
+```
+
+<Tip>
+**Key patterns used:**
+
+- **merge**: Combines multiple Observables into one
+- **scan**: Accumulates values over time (like Array.reduce)
+- **startWith**: Emits an initial value immediately
+</Tip>
+
+## Error Handling
+
+Always handle errors in your Observables:
+
+```typescript
+import { throwError, of, catchError, retry } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+ajax('https://api.example.com/data').pipe(
+  // Retry failed requests up to 3 times
+  retry(3),
+  
+  // Catch any remaining errors
+  catchError(error => {
+    console.error('Request failed:', error);
+    // Return a fallback value
+    return of({ data: [], error: true });
+  })
+).subscribe(result => {
+  console.log('Result:', result);
+});
+```
+
+## Unsubscribing
+
+Always clean up subscriptions to prevent memory leaks:
+
+```typescript
+import { interval } from 'rxjs';
+
+const subscription = interval(1000).subscribe(value => {
+  console.log(value);
+});
+
+// Later, clean up
+setTimeout(() => {
+  subscription.unsubscribe();
+  console.log('Unsubscribed!');
+}, 5000);
+```
+
+<Note>
+Many operators like `take`, `first`, and `takeUntil` automatically complete the Observable, which unsubscribes for you.
+</Note>
+
+## Common Operators Reference
+
+Here are the most frequently used operators:
+
+<CardGroup cols={2}>
+  <Card title="map" icon="diagram-project">
+    Transform each emitted value
+    ```typescript
+    pipe(map(x => x * 2))
+    ```
+  </Card>
+  
+  <Card title="filter" icon="filter">
+    Only emit values that pass a test
+    ```typescript
+    pipe(filter(x => x > 10))
+    ```
+  </Card>
+  
+  <Card title="take" icon="hand">
+    Take only the first N values
+    ```typescript
+    pipe(take(5))
+    ```
+  </Card>
+  
+  <Card title="debounceTime" icon="clock">
+    Wait for silence before emitting
+    ```typescript
+    pipe(debounceTime(300))
+    ```
+  </Card>
+  
+  <Card title="switchMap" icon="arrows-turn-to-dots">
+    Switch to a new Observable, canceling previous
+    ```typescript
+    pipe(switchMap(id => ajax(`/api/${id}`)))
+    ```
+  </Card>
+  
+  <Card title="catchError" icon="triangle-exclamation">
+    Handle errors gracefully
+    ```typescript
+    pipe(catchError(err => of(defaultValue)))
+    ```
+  </Card>
+  
+  <Card title="merge" icon="code-merge">
+    Combine multiple Observables
+    ```typescript
+    merge(obs1$, obs2$, obs3$)
+    ```
+  </Card>
+  
+  <Card title="scan" icon="calculator">
+    Accumulate values over time
+    ```typescript
+    pipe(scan((acc, val) => acc + val, 0))
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Core Concepts" icon="book" href="/core-concepts">
+    Deep dive into Observables, Observers, and Subscriptions
+  </Card>
+  
+  <Card title="Operators Guide" icon="wand-magic-sparkles" href="/operators">
+    Master the full suite of RxJS operators
+  </Card>
+  
+  <Card title="Subjects" icon="diagram-project" href="/subjects">
+    Learn about multicasting with Subjects
+  </Card>
+  
+  <Card title="Schedulers" icon="clock" href="/schedulers">
+    Control timing and concurrency
+  </Card>
+</CardGroup>
+
+<Tip>
+**Pro tip**: The best way to learn RxJS is by building! Try recreating common UI patterns like autocomplete, infinite scroll, or drag-and-drop using Observables.
+</Tip>

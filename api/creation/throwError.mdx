@@ -1,0 +1,117 @@
+---
+title: 'throwError'
+description: 'Creates an Observable that immediately errors when subscribed'
+---
+
+# throwError
+
+Creates an Observable that will create an error instance and push it to the consumer as an error immediately upon subscription.
+
+## Import
+
+```typescript
+import { throwError } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function throwError(errorFactory: () => any): Observable<never>;
+```
+
+## Parameters
+
+<ParamField path="errorFactory" type="() => any" required>
+  A factory function that returns the error to emit. Called on each subscription.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<never>">
+  An Observable that errors immediately upon subscription.
+</ResponseField>
+
+## Description
+
+Creates an Observable that errors immediately. Useful for error handling and testing.
+
+## Examples
+
+### Basic Error
+
+```typescript
+import { throwError } from 'rxjs';
+
+throwError(() => new Error('Oops!')).subscribe({
+  error: err => console.error('Error:', err.message)
+});
+
+// Output:
+// Error: Oops!
+```
+
+### Dynamic Error
+
+```typescript
+import { throwError } from 'rxjs';
+
+let errorCount = 0;
+
+const error$ = throwError(() => {
+  const error: any = new Error(`Error #${++errorCount}`);
+  error.timestamp = Date.now();
+  return error;
+});
+
+error$.subscribe({ error: err => console.log(err.message) });
+error$.subscribe({ error: err => console.log(err.message) });
+
+// Output:
+// Error #1
+// Error #2
+```
+
+## Common Use Cases
+
+### Conditional Error
+
+```typescript
+import { throwError, of } from 'rxjs';
+
+function getUser(id: string) {
+  if (!id) {
+    return throwError(() => new Error('User ID required'));
+  }
+  return of({ id, name: 'User' });
+}
+```
+
+### Testing Error Paths
+
+```typescript
+import { throwError } from 'rxjs';
+import { catchError, of } from 'rxjs';
+
+throwError(() => new Error('Test error')).pipe(
+  catchError(err => {
+    console.error('Caught:', err.message);
+    return of('Fallback');
+  })
+).subscribe(value => console.log(value));
+```
+
+## Important Note
+
+<Note>
+  Often you can just `throw` an error in operators instead of using `throwError`. RxJS will catch it and emit as an error.
+</Note>
+
+## Related Operators
+
+- **[of](/api/creation/of)** - Emit values successfully
+- **[defer](/api/creation/defer)** - Lazy Observable creation
+- **EMPTY** - Observable that completes immediately
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/throwError)

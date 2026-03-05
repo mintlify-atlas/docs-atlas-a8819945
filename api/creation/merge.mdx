@@ -1,0 +1,128 @@
+---
+title: 'merge'
+description: 'Creates an output Observable which concurrently emits all values from every given input Observable'
+---
+
+# merge
+
+Creates an output Observable which concurrently emits all values from every given input Observable.
+
+## Import
+
+```typescript
+import { merge } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function merge<A extends readonly unknown[]>(
+  ...sources: [...ObservableInputTuple<A>]
+): Observable<A[number]>;
+
+function merge<A extends readonly unknown[]>(
+  ...sourcesAndConcurrency: [...ObservableInputTuple<A>, number?]
+): Observable<A[number]>;
+```
+
+## Parameters
+
+<ParamField path="sources" type="...ObservableInput[]" required>
+  Multiple Observables to merge together.
+</ParamField>
+
+<ParamField path="concurrent" type="number">
+  Optional maximum number of Observables to subscribe to concurrently. Defaults to Infinity.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable that emits items from all input Observables as they arrive.
+</ResponseField>
+
+## Description
+
+`merge` subscribes to all input Observables concurrently and forwards all values to the output Observable.
+
+**Key characteristics:**
+- Subscribes to ALL Observables immediately
+- Emits values as they arrive from ANY Observable
+- Completes when ALL Observables complete
+- Errors immediately if ANY Observable errors
+
+## Examples
+
+### Basic Merge
+
+```typescript
+import { merge, interval } from 'rxjs';
+import { map, take } from 'rxjs/operators';
+
+const first$ = interval(1000).pipe(
+  map(x => `First: ${x}`),
+  take(3)
+);
+
+const second$ = interval(500).pipe(
+  map(x => `Second: ${x}`),
+  take(3)
+);
+
+merge(first$, second$).subscribe(console.log);
+
+// Output (interleaved):
+// Second: 0 (at 0.5s)
+// First: 0  (at 1s)
+// Second: 1 (at 1s)
+// Second: 2 (at 1.5s)
+// First: 1  (at 2s)
+// First: 2  (at 3s)
+```
+
+### Limited Concurrency
+
+```typescript
+import { merge, interval, take } from 'rxjs';
+
+const timer1 = interval(1000).pipe(take(10));
+const timer2 = interval(2000).pipe(take(6));
+const timer3 = interval(500).pipe(take(10));
+
+const concurrent = 2; // Only 2 active at a time
+const merged = merge(timer1, timer2, timer3, concurrent);
+
+merged.subscribe(x => console.log(x));
+```
+
+## Common Use Cases
+
+### Multiple Event Sources
+
+```typescript
+import { merge, fromEvent } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const clicks$ = fromEvent(document, 'click').pipe(
+  map(() => 'Clicked')
+);
+
+const keypress$ = fromEvent(document, 'keypress').pipe(
+  map(() => 'Key pressed')
+);
+
+merge(clicks$, keypress$).subscribe(action => {
+  console.log('User action:', action);
+});
+```
+
+## Related Operators
+
+- **[concat](/api/creation/concat)** - Subscribe sequentially
+- **[combineLatest](/api/creation/combineLatest)** - Combine latest values
+- **[zip](/api/creation/zip)** - Combine by index
+- **[forkJoin](/api/creation/forkJoin)** - Wait for all to complete
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/merge)

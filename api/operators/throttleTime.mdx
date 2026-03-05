@@ -1,0 +1,119 @@
+---
+title: throttleTime
+description: Emits a value, then ignores subsequent values for a specified duration
+---
+
+## Overview
+
+Emits a value from the source Observable, then ignores subsequent source values for `duration` milliseconds, then repeats this process.
+
+<Note>
+`throttleTime` emits the source Observable values on the output Observable when its internal timer is disabled, and ignores source values when the timer is enabled.
+</Note>
+
+## Type Signature
+
+```typescript
+interface ThrottleConfig {
+  leading?: boolean;
+  trailing?: boolean;
+}
+
+function throttleTime<T>(
+  duration: number,
+  scheduler: SchedulerLike = asyncScheduler,
+  config?: ThrottleConfig
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="duration" type="number" required>
+  Time to wait before emitting another value after emitting the last value, measured in milliseconds or time unit determined by the optional `scheduler`.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The SchedulerLike to use for managing the timers that handle the throttling.
+</ParamField>
+
+<ParamField path="config" type="ThrottleConfig" optional>
+  Configuration object to define `leading` and `trailing` behavior. Defaults to `{ leading: true, trailing: false }`.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that performs the throttle operation to limit the rate of emissions from the source.
+
+## Usage Examples
+
+### Basic Example: Limit Click Rate
+
+```typescript
+import { fromEvent, throttleTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(throttleTime(1000));
+
+result.subscribe(x => console.log(x));
+// Emits at most one click per second
+```
+
+### With Leading and Trailing
+
+```typescript
+import { fromEvent, throttleTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(
+  throttleTime(1000, undefined, { leading: true, trailing: true })
+);
+
+result.subscribe(x => console.log(x));
+// Emits first AND last click in each 1-second window
+```
+
+### Scroll Handler
+
+```typescript
+import { fromEvent, throttleTime } from 'rxjs';
+
+const scrolls = fromEvent(window, 'scroll');
+const throttled = scrolls.pipe(
+  throttleTime(200)
+);
+
+throttled.subscribe(() => {
+  console.log('Scroll event (throttled)');
+  updateScrollPosition();
+});
+```
+
+## When to Use
+
+### Use `throttleTime` when:
+- You want to **limit event frequency** to a fixed rate
+- You need the **first** value in each time window
+- Handling rapid UI events (clicks, scrolls, resizes)
+- Implementing **rate limiting** for API calls
+
+### Don't use `throttleTime` when:
+- You want the **last** value (use `auditTime` instead)
+- You need **dynamic duration** (use `throttle` instead)
+- You want to wait for **silence** (use `debounceTime` instead)
+
+## Comparison with Similar Operators
+
+| Operator | Emits | Duration |
+|----------|-------|----------|
+| `throttleTime` | **First** value in window | **Fixed** time |
+| `auditTime` | **Last** value in window | **Fixed** time |
+| `throttle` | **First** value in window | **Dynamic** (from Observable) |
+| `debounceTime` | **Last** value after **silence** | **Fixed** time |
+
+## Related Operators
+
+- **[throttle](/api/operators/throttle)** - Same behavior but with dynamic duration
+- **[auditTime](/api/operators/auditTime)** - Emits last value instead of first
+- **[debounceTime](/api/operators/debounceTime)** - Waits for silence before emitting
+- **[sampleTime](/api/operators/sampleTime)** - Samples at fixed intervals
+- **[audit](/api/operators/audit)** - Like throttle but emits last value

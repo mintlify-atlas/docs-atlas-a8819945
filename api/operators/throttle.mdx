@@ -1,0 +1,79 @@
+---
+title: throttle
+description: Emits a value, then ignores subsequent values for a duration determined by another Observable
+---
+
+## Overview
+
+Emits a value from the source Observable, then ignores subsequent source values for a duration determined by another Observable, then repeats this process.
+
+<Note>
+`throttle` is similar to `audit`, but emits the **first** value from the silenced time window instead of the last value.
+</Note>
+
+## Type Signature
+
+```typescript
+interface ThrottleConfig {
+  leading?: boolean;
+  trailing?: boolean;
+}
+
+function throttle<T>(
+  durationSelector: (value: T) => ObservableInput<any>,
+  config?: ThrottleConfig
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="durationSelector" type="(value: T) => ObservableInput<any>" required>
+  A function that receives a value from the source Observable, for computing the silencing duration for each source value, returned as an ObservableInput.
+</ParamField>
+
+<ParamField path="config" type="ThrottleConfig" optional>
+  Configuration object to define `leading` and `trailing` behavior.
+  
+  - `leading`: If `true`, emit the first value (default: `true`)
+  - `trailing`: If `true`, emit the last value when duration completes (default: `false`)
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that performs the throttle operation.
+
+## Usage Examples
+
+### Basic Example
+
+```typescript
+import { fromEvent, throttle, interval } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(throttle(() => interval(1000)));
+
+result.subscribe(x => console.log(x));
+// Emits first click, ignores subsequent clicks for 1 second
+```
+
+### With Config
+
+```typescript
+import { fromEvent, throttle, interval } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(
+  throttle(() => interval(1000), { leading: true, trailing: true })
+);
+
+result.subscribe(x => console.log(x));
+// Emits first click AND last click in each 1-second window
+```
+
+## Related Operators
+
+- **[throttleTime](/api/operators/throttleTime)** - Same behavior but with fixed duration
+- **[audit](/api/operators/audit)** - Emits last value instead of first
+- **[auditTime](/api/operators/auditTime)** - Like audit but with fixed duration
+- **[debounce](/api/operators/debounce)** - Waits for silence before emitting
+- **[sample](/api/operators/sample)** - Samples when another Observable emits

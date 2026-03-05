@@ -1,0 +1,201 @@
+---
+title: 'delay'
+description: 'Delay emissions from the source Observable by a specified timeout or until a given Date'
+---
+
+## Overview
+
+The `delay` operator time-shifts each item emitted by the source Observable by a specified amount of time (in milliseconds) or until a specific Date occurs. The relative time intervals between values are preserved.
+
+## Signature
+
+```typescript
+function delay<T>(
+  due: number | Date,
+  scheduler: SchedulerLike = asyncScheduler
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="due" type="number | Date" required>
+  The delay duration in milliseconds (as a `number`) or a `Date` until which the emission of the source items is delayed.
+  
+  - **number**: Delays each emission by this many milliseconds
+  - **Date**: Delays the start of emissions until this date/time
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The scheduler to use for managing the timers that handle the time-shift for each item.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="MonoTypeOperatorFunction<T>">
+  A function that returns an Observable that delays the emissions of the source Observable by the specified timeout or Date.
+</ParamField>
+
+## Usage Examples
+
+### Delay by Milliseconds
+
+Delay each click event by 1 second:
+
+<CodeGroup>
+```typescript Basic delay
+import { fromEvent, delay } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const delayedClicks = clicks.pipe(
+  delay(1000)
+);
+
+delayedClicks.subscribe(x => console.log(x));
+// Each click is logged 1 second after it occurs
+```
+
+```typescript Delay with custom scheduler
+import { of, delay, animationFrameScheduler } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  delay(0, animationFrameScheduler)
+).subscribe(console.log);
+// Values emitted on next animation frame
+```
+</CodeGroup>
+
+### Delay Until Date
+
+Delay all emissions until a future date:
+
+```typescript
+import { fromEvent, delay } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const date = new Date('March 15, 2050 12:00:00');
+
+const delayedClicks = clicks.pipe(
+  delay(date)
+);
+
+delayedClicks.subscribe(x => console.log(x));
+// Clicks are only emitted after the specified date
+```
+
+### Staggered Animation
+
+Create a staggered animation effect:
+
+```typescript
+import { from, delay, concatMap } from 'rxjs';
+
+const items = ['First', 'Second', 'Third', 'Fourth'];
+
+from(items).pipe(
+  concatMap((item, index) => 
+    of(item).pipe(delay(index * 500))
+  )
+).subscribe(item => {
+  console.log(`${Date.now()}: ${item}`);
+});
+
+// Output (with increasing delays):
+// 0ms: First
+// 500ms: Second
+// 1000ms: Third
+// 1500ms: Fourth
+```
+
+### Debounce Effect
+
+Combine with other operators for complex timing:
+
+```typescript
+import { fromEvent, map, delay, take } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+
+clicks$.pipe(
+  map(() => 'Click!'),
+  delay(1000),
+  take(1)
+).subscribe(msg => {
+  console.log(msg);
+  // Only first click is processed, delayed by 1 second
+});
+```
+
+## How It Works
+
+<Note>
+  `delay` preserves the relative timing between emissions. If source emits at t=0ms, t=100ms, t=200ms, and you apply `delay(1000)`, the result emits at t=1000ms, t=1100ms, t=1200ms.
+</Note>
+
+When using a **number** delay:
+1. Each value from the source is queued
+2. A timer is started for that value
+3. After the delay period, the value is emitted
+4. Relative spacing between values is maintained
+
+When using a **Date** delay:
+1. The operator waits until that date/time
+2. Then all subsequent values are emitted normally
+3. If the date is in the past, emissions start immediately
+
+## Common Use Cases
+
+1. **Simulating Network Latency**: Test how your app handles delayed responses
+2. **Animation Timing**: Create sequential animations with precise timing
+3. **Rate Limiting**: Add delays between API calls
+4. **User Feedback**: Delay showing loading indicators to avoid flashing
+5. **Scheduled Actions**: Start processing at a specific time
+
+## Comparison with Similar Operators
+
+<Tip>
+  **delay vs delayWhen**: Use `delay` for fixed delays. Use `delayWhen` when the delay duration needs to be dynamic based on each emitted value.
+</Tip>
+
+| Operator | Delay Type | Use Case |
+|----------|------------|----------|
+| `delay` | Fixed duration or date | Consistent delays for all items |
+| `delayWhen` | Dynamic per value | Variable delays based on value |
+| `debounceTime` | Resets on each emission | Wait for pause in emissions |
+| `throttleTime` | Limits rate | Emit at most once per time period |
+
+## Implementation Details
+
+`delay` is implemented using `delayWhen` internally:
+
+```typescript
+export function delay<T>(
+  due: number | Date, 
+  scheduler: SchedulerLike = asyncScheduler
+): MonoTypeOperatorFunction<T> {
+  const duration = timer(due, scheduler);
+  return delayWhen(() => duration);
+}
+```
+
+<Warning>
+  Error notifications from the source are NOT delayed and are passed through immediately. Use `materialize` and `dematerialize` if you need to delay error notifications.
+</Warning>
+
+## Performance Considerations
+
+- Each delayed value creates a timer/subscription
+- For many rapid emissions, consider using `bufferTime` or `auditTime` instead
+- The scheduler parameter allows optimization for different contexts (browser animations, testing, etc.)
+
+## Related Operators
+
+- [delayWhen](/api/operators/delayWhen) - Delay based on another Observable
+- [debounceTime](/api/operators/debounceTime) - Delay and discard rapid emissions
+- [throttleTime](/api/operators/throttleTime) - Emit at most once per time period
+- [timeout](/api/operators/timeout) - Error if emissions are too slow
+- [timer](/api/observables/timer) - Create Observable that emits after delay
+
+## See Also
+
+- [RxJS delay documentation](https://rxjs.dev/api/operators/delay)
+- [Schedulers Guide](/guides/schedulers)

@@ -1,0 +1,355 @@
+---
+title: 'subscribeOn'
+description: 'Asynchronously subscribe to the source Observable on a specified scheduler'
+---
+
+## Overview
+
+The `subscribeOn` operator controls what scheduler is used when the subscription to the source Observable happens. This affects when and how the subscription side-effects execute, not when values are delivered (use `observeOn` for that).
+
+<Note>
+  `subscribeOn` affects **when subscription happens**, while `observeOn` affects **when notifications are delivered**. These are complementary operators.
+</Note>
+
+## Signature
+
+```typescript
+function subscribeOn<T>(
+  scheduler: SchedulerLike,
+  delay: number = 0
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="scheduler" type="SchedulerLike" required>
+  The scheduler to use for subscription actions. Determines when the source Observable is subscribed to.
+</ParamField>
+
+<ParamField path="delay" type="number" default="0">
+  A delay (in milliseconds) to pass to the scheduler before subscribing to the source.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="MonoTypeOperatorFunction<T>">
+  A function that returns an Observable modified so that its subscriptions happen on the specified scheduler.
+</ParamField>
+
+## Usage Examples
+
+### Change Subscription Order
+
+Control the order of Observable emissions with schedulers:
+
+<CodeGroup>
+```typescript Without subscribeOn
+import { of, merge } from 'rxjs';
+
+const a = of(1, 2, 3);
+const b = of(4, 5, 6);
+
+merge(a, b).subscribe(console.log);
+
+// Output (synchronous):
+// 1
+// 2
+// 3
+// 4
+// 5
+// 6
+```
+
+```typescript With subscribeOn
+import { of, subscribeOn, asyncScheduler, merge } from 'rxjs';
+
+const a = of(1, 2, 3).pipe(subscribeOn(asyncScheduler));
+const b = of(4, 5, 6);
+
+merge(a, b).subscribe(console.log);
+
+// Output (b emits first):
+// 4
+// 5
+// 6
+// 1
+// 2
+// 3
+```
+</CodeGroup>
+
+### Delayed Subscription
+
+Delay when the source is subscribed to:
+
+```typescript
+import { of, subscribeOn, asyncScheduler } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+console.log('Before subscribe');
+
+of(1, 2, 3).pipe(
+  tap(() => console.log('Source executing')),
+  subscribeOn(asyncScheduler, 2000)
+).subscribe({
+  next: console.log,
+  complete: () => console.log('Complete')
+});
+
+console.log('After subscribe');
+
+// Output:
+// Before subscribe
+// After subscribe
+// (2 second delay)
+// Source executing
+// 1
+// Source executing
+// 2
+// Source executing
+// 3
+// Complete
+```
+
+### Non-Blocking Subscription
+
+Prevent blocking the current execution context:
+
+```typescript
+import { range, subscribeOn, asyncScheduler } from 'rxjs';
+
+console.log('Start');
+
+range(1, 1000000).pipe(
+  subscribeOn(asyncScheduler)
+).subscribe({
+  next: value => {
+    // Heavy computation
+    performExpensiveOperation(value);
+  },
+  complete: () => console.log('Processing complete')
+});
+
+console.log('Subscription initiated');
+// UI remains responsive because subscription is async
+
+// Output:
+// Start
+// Subscription initiated
+// (then processing happens asynchronously)
+// Processing complete
+```
+
+### Testing with Scheduler
+
+Control timing in unit tests:
+
+```typescript
+import { of, subscribeOn } from 'rxjs';
+import { TestScheduler } from 'rxjs/testing';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+
+testScheduler.run(({ expectObservable, cold }) => {
+  const source$ = cold('a-b-c|').pipe(
+    subscribeOn(testScheduler)
+  );
+  
+  expectObservable(source$).toBe('a-b-c|');
+});
+```
+
+## How It Works
+
+The operator schedules the subscription action on the specified scheduler:
+
+```typescript
+export function subscribeOn<T>(scheduler: SchedulerLike, delay: number = 0): MonoTypeOperatorFunction<T> {
+  return (source) =>
+    new Observable((subscriber) => {
+      subscriber.add(scheduler.schedule(() => source.subscribe(subscriber), delay));
+    });
+}
+```
+
+Instead of immediately subscribing to the source, it schedules that subscription for later execution.
+
+## Key Differences: subscribeOn vs observeOn
+
+<Tip>
+  **subscribeOn**: Controls WHEN subscription happens (affects subscription side-effects)
+  
+  **observeOn**: Controls WHEN notifications are delivered (affects next/error/complete timing)
+</Tip>
+
+| Feature | subscribeOn | observeOn |
+|---------|-------------|------------|
+| Affects | Subscription timing | Notification timing |
+| Position matters | No (can be anywhere) | Yes (affects downstream) |
+| Delays | Subscription | Each notification |
+| Use case | Control subscription context | Control delivery context |
+| Multiple uses | Last one wins | Each affects downstream |
+
+```typescript
+import { of, subscribeOn, observeOn, asyncScheduler } from 'rxjs';
+
+// subscribeOn - position doesn't matter
+of(1, 2, 3)
+  .pipe(
+    map(x => x * 2),
+    subscribeOn(asyncScheduler) // Could be anywhere in pipe
+  )
+  .subscribe(console.log);
+
+// observeOn - affects everything downstream
+of(1, 2, 3)
+  .pipe(
+    map(x => x * 2), // Runs synchronously
+    observeOn(asyncScheduler), // Everything after runs async
+    map(x => x + 1) // Runs asynchronously
+  )
+  .subscribe(console.log);
+```
+
+## Position Independence
+
+<Note>
+  Unlike `observeOn`, the position of `subscribeOn` in the pipe doesn't matter - it always affects the initial subscription to the source.
+</Note>
+
+```typescript
+import { of, subscribeOn, asyncScheduler, tap } from 'rxjs';
+
+// These are equivalent:
+
+// subscribeOn at the start
+of(1, 2, 3).pipe(
+  subscribeOn(asyncScheduler),
+  tap(console.log)
+).subscribe();
+
+// subscribeOn at the end
+of(1, 2, 3).pipe(
+  tap(console.log),
+  subscribeOn(asyncScheduler)
+).subscribe();
+
+// Both delay the subscription equally
+```
+
+## Common Use Cases
+
+1. **Async Initialization**: Defer expensive setup operations
+2. **Controlling Execution Order**: Manage which Observable subscribes first in merges
+3. **Non-Blocking Operations**: Keep UI responsive during subscriptions
+4. **Testing**: Control subscription timing with TestScheduler
+5. **Background Processing**: Move subscription work off main thread (in Worker environments)
+
+## Multiple subscribeOn Operators
+
+<Warning>
+  When multiple `subscribeOn` operators are used, the **last one** closest to the source wins.
+</Warning>
+
+```typescript
+import { of, subscribeOn, asyncScheduler, queueScheduler } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  subscribeOn(asyncScheduler),
+  subscribeOn(queueScheduler) // This one is used
+).subscribe(console.log);
+
+// queueScheduler is used because it's last
+```
+
+## Practical Example: API Client
+
+Defer expensive API initialization:
+
+```typescript
+import { Observable, subscribeOn, asyncScheduler } from 'rxjs';
+
+class ApiClient {
+  private initializeConnection(): void {
+    // Expensive: establish connection, authenticate, etc.
+    console.log('Initializing API connection...');
+  }
+  
+  getUsers(): Observable<User[]> {
+    return new Observable(subscriber => {
+      this.initializeConnection();
+      
+      fetch('/api/users')
+        .then(response => response.json())
+        .then(users => {
+          subscriber.next(users);
+          subscriber.complete();
+        })
+        .catch(error => subscriber.error(error));
+    }).pipe(
+      subscribeOn(asyncScheduler) // Don't block on initialization
+    );
+  }
+}
+
+const client = new ApiClient();
+
+console.log('Creating subscription...');
+client.getUsers().subscribe(users => {
+  console.log('Users:', users);
+});
+console.log('Subscription created');
+
+// Output:
+// Creating subscription...
+// Subscription created
+// Initializing API connection...
+// Users: [...]
+```
+
+## Schedulers Overview
+
+<Tip>
+  Choose the scheduler based on when you want subscription to occur:
+  
+  - **asyncScheduler**: Next macrotask (setTimeout)
+  - **asapScheduler**: Next microtask (Promise)
+  - **queueScheduler**: Synchronous but queued
+  - **animationFrameScheduler**: Before next browser repaint
+</Tip>
+
+## Performance Considerations
+
+- `subscribeOn` adds minimal overhead - just schedules one task
+- Use when you need to control subscription timing, not for every Observable
+- For high-frequency resubscriptions, consider the scheduler overhead
+- In most cases, synchronous subscription is fine
+
+## Best Practices
+
+1. **Use sparingly**: Only when you need to control subscription timing
+2. **Position anywhere**: Take advantage of position independence for readability
+3. **Choose right scheduler**: Match scheduler to use case
+4. **Document why**: Make it clear why async subscription is needed
+5. **Testing**: Leverage with TestScheduler for deterministic tests
+
+## Related Operators
+
+- [observeOn](/api/operators/observeOn) - Control notification delivery timing
+- [delay](/api/operators/delay) - Delay all emissions
+- [subscribeOn](/api/operators/throttleTime) - Control emission rate
+
+## Related Schedulers
+
+- [asyncScheduler](/api/schedulers/asyncScheduler) - Macrotask queue
+- [asapScheduler](/api/schedulers/asapScheduler) - Microtask queue
+- [queueScheduler](/api/schedulers/queueScheduler) - Synchronous queue
+- [animationFrameScheduler](/api/schedulers/animationFrameScheduler) - Animation timing
+
+## See Also
+
+- [RxJS subscribeOn documentation](https://rxjs.dev/api/operators/subscribeOn)
+- [Schedulers Guide](/guides/schedulers)
+- [Testing with Schedulers](/guides/testing-schedulers)

@@ -1,0 +1,260 @@
+---
+title: debounce
+description: Delays emissions until a specified duration of silence determined by another Observable
+---
+
+## Overview
+
+Emits a notification from the source Observable only after a particular time span determined by another Observable has passed without another source emission.
+
+<Note>
+`debounce` delays notifications emitted by the source Observable, but **drops previous pending delayed emissions** if a new notification arrives on the source Observable.
+</Note>
+
+## Type Signature
+
+```typescript
+function debounce<T>(
+  durationSelector: (value: T) => ObservableInput<any>
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="durationSelector" type="(value: T) => ObservableInput<any>" required>
+  A function that receives a value from the source Observable, for computing the timeout duration for each source value, returned as an Observable or a Promise.
+  
+  The duration Observable determines how long to wait before emitting. If a new value arrives before the duration completes, the previous pending emission is cancelled.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that delays the emissions of the source Observable by the specified duration Observable, and may drop some values if they occur too frequently.
+
+## How It Works
+
+1. When a value arrives from the source, it's **cached**
+2. A duration Observable is created by calling `durationSelector(value)`
+3. If a **new value** arrives before the duration Observable emits:
+   - The **previous pending emission is cancelled**
+   - The process restarts with the new value
+4. When the duration Observable **emits**, the **cached value** is emitted
+5. If the source **completes** during a pending duration, the cached value is emitted before completion
+
+<Warning>
+If an error occurs during the scheduled duration or after it, only the error is forwarded. The cached notification is **not** emitted.
+</Warning>
+
+## Usage Examples
+
+### Basic Example: Emit After Burst of Clicks
+
+```typescript
+import { fromEvent, scan, debounce, interval } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(
+  scan(i => ++i, 1),
+  debounce(i => interval(200 * i))
+);
+
+result.subscribe(x => console.log(x));
+// Wait time increases with each click in the burst
+```
+
+### Search Input with Dynamic Delay
+
+```typescript
+import { fromEvent, debounce, timer, map } from 'rxjs';
+
+const input = document.querySelector('#search') as HTMLInputElement;
+
+const search$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounce(term => {
+    // Longer delay for shorter terms (likely still typing)
+    const delay = term.length < 3 ? 1000 : 300;
+    return timer(delay);
+  })
+);
+
+search$.subscribe(term => {
+  console.log('Search for:', term);
+});
+```
+
+### Dynamic Debounce Based on Value
+
+```typescript
+import { fromEvent, debounce, timer, map } from 'rxjs';
+
+interface FormData {
+  field: string;
+  value: string;
+  priority: 'high' | 'low';
+}
+
+const formChanges$ = fromEvent<Event>(document, 'input').pipe(
+  map(e => {
+    const target = e.target as HTMLInputElement;
+    return {
+      field: target.name,
+      value: target.value,
+      priority: target.dataset.priority as 'high' | 'low'
+    };
+  }),
+  debounce(data => {
+    // High priority fields debounce faster
+    const delay = data.priority === 'high' ? 300 : 1000;
+    return timer(delay);
+  })
+);
+
+formChanges$.subscribe(data => {
+  console.log('Validate field:', data.field, data.value);
+});
+```
+
+<CodeGroup>
+```typescript API Search
+import { fromEvent, debounce, timer, map, distinctUntilChanged, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const searchResults$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  distinctUntilChanged(),
+  debounce(term => {
+    // Adaptive delay based on term length
+    if (term.length === 0) return timer(0);
+    if (term.length < 3) return timer(500);
+    return timer(300);
+  }),
+  switchMap(term => {
+    if (!term) return [];
+    return ajax.getJSON(`/api/search?q=${encodeURIComponent(term)}`);
+  })
+);
+
+searchResults$.subscribe(results => {
+  console.log('Search results:', results);
+});
+```
+
+```typescript Form Validation
+import { fromEvent, debounce, timer, map, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const emailInput = document.querySelector('#email') as HTMLInputElement;
+
+const emailValidation$ = fromEvent(emailInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounce(email => {
+    // Quick validation for obviously invalid emails
+    const hasAt = email.includes('@');
+    return timer(hasAt ? 500 : 200);
+  }),
+  switchMap(email => 
+    ajax.post('/api/validate-email', { email })
+  )
+);
+
+emailValidation$.subscribe(
+  response => console.log('Valid:', response),
+  error => console.log('Invalid email')
+);
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `debounce` when:
+- You need **dynamic delay** based on the emitted value
+- Implementing search-as-you-type with adaptive timing
+- Form validation with different delays per field
+- Waiting for user to **finish an action** before processing
+
+### Don't use `debounce` when:
+- You need a **fixed delay** (use `debounceTime` instead)
+- You want to emit at **regular intervals** (use `auditTime` or `throttleTime`)
+- You need the **first** value in a burst (use `throttle`)
+- **Every value** is important (consider `buffer` instead)
+
+## Common Patterns
+
+### Adaptive Search Delay
+
+```typescript
+import { fromEvent, debounce, timer, map } from 'rxjs';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounce(term => {
+    // No delay for empty (clearing search)
+    if (!term) return timer(0);
+    // Longer delay for short terms (likely still typing)
+    if (term.length < 3) return timer(800);
+    // Short delay for longer terms
+    return timer(300);
+  })
+);
+
+search$.subscribe(term => performSearch(term));
+
+function performSearch(term: string) {
+  console.log('Searching for:', term);
+}
+```
+
+### Priority-Based Validation
+
+```typescript
+import { merge, debounce, timer, map } from 'rxjs';
+
+const criticalFields$ = getCriticalFieldChanges().pipe(
+  debounce(() => timer(200)) // Fast validation
+);
+
+const normalFields$ = getNormalFieldChanges().pipe(
+  debounce(() => timer(800)) // Slower validation
+);
+
+const allValidations$ = merge(criticalFields$, normalFields$);
+
+allValidations$.subscribe(field => validateField(field));
+```
+
+<Tip>
+Combine `debounce` with `distinctUntilChanged` to avoid processing duplicate values when the user corrects a typo back to the previous value.
+</Tip>
+
+## Behavior on Completion
+
+```typescript
+import { of, debounce, timer, delay } from 'rxjs';
+
+// Source completes during pending debounce
+const source$ = of('a', 'b', 'c');
+const result$ = source$.pipe(
+  debounce(() => timer(100))
+);
+
+result$.subscribe({
+  next: val => console.log('Value:', val),
+  complete: () => console.log('Complete')
+});
+// Output:
+// Value: c (after 100ms)
+// Complete
+```
+
+## Related Operators
+
+- **[debounceTime](/api/operators/debounceTime)** - Same behavior but with fixed duration
+- **[audit](/api/operators/audit)** - Emits last value after duration, doesn't require silence
+- **[throttle](/api/operators/throttle)** - Emits first value and ignores subsequent ones
+- **[distinctUntilChanged](/api/operators/distinctUntilChanged)** - Often combined to filter duplicates
+- **[switchMap](/api/operators/switchMap)** - Often used after debounce for API calls

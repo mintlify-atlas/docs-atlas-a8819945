@@ -1,0 +1,554 @@
+---
+title: 'Testing RxJS Code'
+description: 'Learn how to test RxJS code synchronously using marble testing and TestScheduler'
+---
+
+We can test **asynchronous** RxJS code **synchronously** and deterministically by virtualizing time using the `TestScheduler`. Marble diagrams provide a visual way to represent Observable behavior and create comprehensive tests.
+
+<Note>
+  The TestScheduler can only test code that uses RxJS schedulers (`asyncScheduler`, `animationFrameScheduler`, etc.). Code that uses Promises or native timers cannot be tested with TestScheduler and should use traditional async testing.
+</Note>
+
+## Getting Started with TestScheduler
+
+The `TestScheduler` is exported from `'rxjs/testing'` and requires an assertion function from your test framework:
+
+<CodeGroup>
+```typescript Jest
+import { TestScheduler } from 'rxjs/testing';
+import { throttleTime } from 'rxjs';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+
+// Tests run synchronously!
+it('throttles values correctly', () => {
+  testScheduler.run((helpers) => {
+    const { cold, expectObservable, time } = helpers;
+    const source = cold(' -a--b--c---|');
+    const t = time('      ---|       '); // t = 3
+    const expected = '    -a-----c---|';
+
+    expectObservable(
+      source.pipe(throttleTime(t))
+    ).toBe(expected);
+  });
+});
+```
+
+```typescript Mocha + Chai
+import { TestScheduler } from 'rxjs/testing';
+import { expect } from 'chai';
+import { map } from 'rxjs';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).deep.equal(expected);
+});
+
+describe('map operator', () => {
+  it('transforms values', () => {
+    testScheduler.run(({ cold, expectObservable }) => {
+      const source = cold('--a--b--|', { a: 1, b: 2 });
+      const expected = '   --a--b--|';
+      const values = { a: 2, b: 4 };
+
+      expectObservable(
+        source.pipe(map(x => x * 2))
+      ).toBe(expected, values);
+    });
+  });
+});
+```
+
+```typescript Jasmine
+import { TestScheduler } from 'rxjs/testing';
+import { delay } from 'rxjs';
+
+let testScheduler: TestScheduler;
+
+beforeEach(() => {
+  testScheduler = new TestScheduler((actual, expected) => {
+    expect(actual).toEqual(expected);
+  });
+});
+
+it('delays values by specified time', () => {
+  testScheduler.run(({ cold, expectObservable, time }) => {
+    const source = cold('  -a-b-|');
+    const t = time('        --|  ');
+    const expected = '     ---a-b-|';
+
+    expectObservable(
+      source.pipe(delay(t))
+    ).toBe(expected);
+  });
+});
+```
+</CodeGroup>
+
+## The run() Helper API
+
+The `testScheduler.run(callback)` method provides helper functions for writing tests:
+
+<Steps>
+  <Step title="cold() - Create Cold Observables">
+    Creates an Observable that starts emitting when subscribed.
+    
+    ```typescript
+    testScheduler.run(({ cold }) => {
+      const source = cold('--a--b--|', { a: 1, b: 2 });
+      // Subscription starts at frame 0
+    });
+    ```
+  </Step>
+
+  <Step title="hot() - Create Hot Observables">
+    Creates an Observable that behaves as if already running.
+    
+    ```typescript
+    testScheduler.run(({ hot }) => {
+      const source = hot('^-a--b--|', { a: 1, b: 2 });
+      // ^ marks the subscription point (zero frame)
+    });
+    ```
+  </Step>
+
+  <Step title="expectObservable() - Assert Observable Behavior">
+    Schedules an assertion for the Observable's emissions.
+    
+    ```typescript
+    testScheduler.run(({ cold, expectObservable }) => {
+      const source = cold('--a--b--|');
+      const expected = '   --a--b--|';
+      
+      expectObservable(source).toBe(expected);
+    });
+    ```
+  </Step>
+
+  <Step title="expectSubscriptions() - Assert Subscription Timing">
+    Verifies when subscriptions and unsubscriptions occur.
+    
+    ```typescript
+    testScheduler.run(({ cold, expectSubscriptions }) => {
+      const source = cold('--a--b--|');
+      const subs = '       ^-------!';
+      
+      expectSubscriptions(source.subscriptions).toBe(subs);
+    });
+    ```
+  </Step>
+
+  <Step title="flush() - Execute Virtual Time">
+    Manually triggers all scheduled assertions (usually automatic).
+    
+    ```typescript
+    testScheduler.run(({ cold, flush }) => {
+      let count = 0;
+      cold('--a--b--|').subscribe(() => count++);
+      
+      flush();
+      expect(count).toBe(2);
+    });
+    ```
+  </Step>
+
+  <Step title="time() - Convert Marbles to Numbers">
+    Returns the frame count for a marble diagram (measured to `|`).
+    
+    ```typescript
+    testScheduler.run(({ time }) => {
+      const t = time('---|'); // Returns 3
+      const t2 = time('-------|'); // Returns 7
+    });
+    ```
+  </Step>
+</Steps>
+
+## Marble Syntax Guide
+
+<Note>
+  Inside `testScheduler.run()`, one frame equals one virtual millisecond.
+</Note>
+
+Marble diagrams use special characters to represent Observable events over time:
+
+<Accordion title="Basic Marble Characters">
+  | Character | Meaning | Example |
+  |-----------|---------|----------|
+  | `-` | One frame of time | `---a--` = emit `a` at frame 3 |
+  | `a-z0-9` | Emitted value | `--a--b--` = emit `a`, then `b` |
+  | `\|` | Completion | `--a--\|` = emit `a`, then complete |
+  | `#` | Error | `--a--#` = emit `a`, then error |
+  | `^` | Subscription point (hot only) | `^--a--` = subscribe here |
+  | `!` | Unsubscription point | `^--!` = subscribe then unsubscribe |
+  | `()` | Synchronous grouping | `--(abc\|)` = emit a, b, c, complete (same frame) |
+  | ` ` | Whitespace (ignored) | Used for alignment |
+</Accordion>
+
+### Time Progression Syntax
+
+<Tip>
+  You can use CSS-style duration syntax: `100ms`, `1.5s`, or `2m` for milliseconds, seconds, or minutes.
+</Tip>
+
+```typescript
+testScheduler.run(({ cold, expectObservable }) => {
+  const source = cold('a 100ms b 1s c|');
+  const expected = '   a 100ms b 1s c|';
+  
+  expectObservable(source).toBe(expected);
+});
+```
+
+<Warning>
+  You may need to subtract 1ms because value emissions advance time by 1 frame.
+</Warning>
+
+```typescript
+// Each letter advances time by 1 frame
+const input = '    -a-b-c|';
+const expected = ' -- 9ms a 9ms b 9ms (c|)';
+// Not '10ms' because 'a' itself takes 1 frame
+```
+
+## Testing Common Scenarios
+
+### Testing Operators with Timing
+
+<CodeGroup>
+```typescript debounceTime
+import { TestScheduler } from 'rxjs/testing';
+import { debounceTime } from 'rxjs';
+
+it('debounces values', () => {
+  testScheduler.run(({ cold, expectObservable, time }) => {
+    const source = cold('  -a--b-c---d----|');
+    const t = time('        --|          ');
+    const expected = '     -----c------d--|';
+
+    expectObservable(
+      source.pipe(debounceTime(t))
+    ).toBe(expected);
+  });
+});
+```
+
+```typescript delay
+import { delay } from 'rxjs';
+
+it('delays emission by specified time', () => {
+  testScheduler.run(({ cold, expectObservable, time }) => {
+    const source = cold('  --a--b--|');
+    const t = time('       ----|    ');
+    const expected = '     ------a--b--|';
+
+    expectObservable(
+      source.pipe(delay(t))
+    ).toBe(expected);
+  });
+});
+```
+
+```typescript switchMap
+import { switchMap, of, delay } from 'rxjs';
+
+it('switches to new inner observable', () => {
+  testScheduler.run(({ cold, expectObservable, time }) => {
+    const source = cold('  --a--b--c--|');
+    const t = time('       ---|       ');
+    const expected = '     -----a--b--c--|';
+
+    expectObservable(
+      source.pipe(
+        switchMap(x => of(x).pipe(delay(t)))
+      )
+    ).toBe(expected);
+  });
+});
+```
+</CodeGroup>
+
+### Testing with Values
+
+```typescript
+import { map } from 'rxjs';
+
+it('maps values using provided object', () => {
+  testScheduler.run(({ cold, expectObservable }) => {
+    const source = cold('  --a--b--|', {
+      a: { id: 1, name: 'Alice' },
+      b: { id: 2, name: 'Bob' }
+    });
+    
+    const expected = '     --a--b--|';
+    const expectedValues = {
+      a: 'Alice',
+      b: 'Bob'
+    };
+
+    expectObservable(
+      source.pipe(map(user => user.name))
+    ).toBe(expected, expectedValues);
+  });
+});
+```
+
+### Testing Errors
+
+```typescript
+import { throwError, catchError, of } from 'rxjs';
+
+it('catches and recovers from errors', () => {
+  testScheduler.run(({ cold, expectObservable }) => {
+    const source = cold('  --a--#', 
+      { a: 1 }, 
+      new Error('Oops')
+    );
+    
+    const expected = '     --a--(b|)';
+    const expectedValues = { a: 1, b: 0 };
+
+    expectObservable(
+      source.pipe(
+        catchError(() => of(0))
+      )
+    ).toBe(expected, expectedValues);
+  });
+});
+```
+
+### Testing Hot vs Cold Observables
+
+<CodeGroup>
+```typescript Cold Observable
+testScheduler.run(({ cold, expectObservable }) => {
+  const source = cold('--a--b--c--|');
+  
+  // Each subscription starts from the beginning
+  expectObservable(source).toBe('--a--b--c--|');
+  expectObservable(source).toBe('--a--b--c--|');
+});
+```
+
+```typescript Hot Observable
+testScheduler.run(({ hot, expectObservable }) => {
+  const source = hot('--a--b--c--|');
+  //                   ^^ subscription point
+  
+  // Both subscriptions share the same source
+  expectObservable(source).toBe('--a--b--c--|');
+});
+```
+
+```typescript Hot with Subscription Point
+testScheduler.run(({ hot, expectObservable }) => {
+  const source = hot('-a-b-^-c-d-|');
+  //                       ^ subscription starts here
+  
+  const expected = '     --c-d-|';
+  expectObservable(source).toBe(expected);
+  // Values before ^ are emitted before subscription
+});
+```
+</CodeGroup>
+
+## Subscription Marble Diagrams
+
+Test when subscriptions occur and when they're torn down:
+
+```typescript
+testScheduler.run(({ hot, expectObservable }) => {
+  const source = hot('--a--a--a--a--a--a--');
+  const sub1 = '      --^-----------!';
+  const sub2 = '      ---------^--------!';
+  const expect1 = '   --a--a--a--a--';
+  const expect2 = '   -----------a--a--a-';
+
+  expectObservable(source, sub1).toBe(expect1);
+  expectObservable(source, sub2).toBe(expect2);
+});
+```
+
+<Accordion title="Subscription Marble Syntax">
+  | Character | Meaning |
+  |-----------|---------|
+  | `-` | One frame of time |
+  | `^` | Subscription point |
+  | `!` | Unsubscription point |
+  | `100ms` | Time progression |
+</Accordion>
+
+## Testing Side Effects
+
+Test Observable behavior that updates external state:
+
+```typescript
+import { tap } from 'rxjs';
+
+it('counts emitted values', () => {
+  testScheduler.run(({ cold, expectObservable, flush }) => {
+    let count = 0;
+    
+    const source = cold('--a--b--|', { a: 1, b: 2 });
+    const expected = '   --a--b--|';
+    
+    const result = source.pipe(
+      tap(() => count++)
+    );
+    
+    expectObservable(result).toBe(expected);
+    
+    // flush() completes all observables
+    flush();
+    
+    expect(count).toBe(2);
+  });
+});
+```
+
+## Advanced Testing Patterns
+
+### Testing Higher-Order Observables
+
+```typescript
+import { mergeMap, of, delay } from 'rxjs';
+
+it('flattens higher-order observables', () => {
+  testScheduler.run(({ cold, expectObservable, time }) => {
+    const source = cold('  --a----b--|');
+    const t = time('       --|       ');
+    const expected = '     ----a----b--|';
+
+    expectObservable(
+      source.pipe(
+        mergeMap(x => of(x).pipe(delay(t)))
+      )
+    ).toBe(expected);
+  });
+});
+```
+
+### Testing Animation Frames
+
+```typescript
+import { animationFrames, takeWhile } from 'rxjs';
+
+it('emits on animation frames', () => {
+  testScheduler.run(({ animate, expectObservable }) => {
+    animate('              ---x---x---x');
+    const expected = '     ---a---b---c';
+    
+    expectObservable(
+      animationFrames().pipe(
+        takeWhile(({ elapsed }) => elapsed < 30)
+      )
+    ).toBe(expected);
+  });
+});
+```
+
+### Testing with Multiple Sources
+
+```typescript
+import { combineLatest } from 'rxjs';
+
+it('combines latest values from multiple sources', () => {
+  testScheduler.run(({ cold, expectObservable }) => {
+    const a$ = cold('     -a--b--c--|');
+    const b$ = cold('     --1--2--|  ');
+    const expected = '    --A-BC-D-|';
+    const values = {
+      A: ['a', '1'],
+      B: ['b', '1'],
+      C: ['b', '2'],
+      D: ['c', '2']
+    };
+
+    expectObservable(
+      combineLatest([a$, b$])
+    ).toBe(expected, values);
+  });
+});
+```
+
+## Known Limitations
+
+<Warning>
+  TestScheduler cannot virtualize code that uses Promises, setTimeout, setInterval, or other non-RxJS async operations.
+</Warning>
+
+### Testing Promise-based Code
+
+For code that uses Promises, use traditional async testing:
+
+```typescript
+import { from } from 'rxjs';
+
+// Cannot use TestScheduler for this
+it('handles promises', async () => {
+  const promise = Promise.resolve('data');
+  const result$ = from(promise);
+  
+  const value = await result$.toPromise();
+  expect(value).toBe('data');
+});
+```
+
+### Zero Delay Limitation
+
+You cannot test delays of exactly zero:
+
+```typescript
+// This will not work as expected
+delay(0) // Schedules a macrotask, truly async
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Always Use testScheduler.run()">
+    The modern API provides better defaults and features:
+    
+    ```typescript
+    // Good
+    testScheduler.run(({ cold, expectObservable }) => {
+      // test code
+    });
+    
+    // Avoid (legacy API)
+    const source = testScheduler.createColdObservable('--a--');
+    ```
+  </Step>
+
+  <Step title="Use Whitespace for Alignment">
+    Make your tests readable by aligning marble diagrams:
+    
+    ```typescript
+    const source = cold('  --a--b--|');
+    const expected = '     --x--y--|';
+    const subs = '         ^-------!';
+    ```
+  </Step>
+
+  <Step title="Test One Behavior Per Test">
+    Keep tests focused and easy to understand:
+    
+    ```typescript
+    it('filters even numbers', () => { /* ... */ });
+    it('maps values to strings', () => { /* ... */ });
+    ```
+  </Step>
+
+  <Step title="Provide Meaningful Value Objects">
+    Use descriptive value mappings:
+    
+    ```typescript
+    const values = {
+      a: { id: 1, status: 'active' },
+      b: { id: 2, status: 'inactive' }
+    };
+    ```
+  </Step>
+</Steps>

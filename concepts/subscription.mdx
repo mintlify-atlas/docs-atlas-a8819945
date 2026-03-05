@@ -1,0 +1,523 @@
+---
+title: Subscription
+description: Learn about Subscriptions, which represent the execution of an Observable and provide the ability to cancel that execution
+---
+
+A **Subscription** represents a disposable resource, typically the execution of an Observable. It provides the mechanism to cancel an Observable execution and free up resources.
+
+## What is a Subscription?
+
+When you call `subscribe()` on an Observable, you get back a Subscription object. This object represents the ongoing execution and allows you to cancel it by calling `unsubscribe()`.
+
+<Info>
+  Think of a Subscription as a receipt for your Observable execution - you can use it to cancel the execution and clean up resources.
+</Info>
+
+## Type Signature
+
+```typescript
+interface Subscription extends SubscriptionLike {
+  unsubscribe(): void;
+  add(teardown: TeardownLogic): void;
+  remove(subscription: Subscription): void;
+  readonly closed: boolean;
+}
+
+interface SubscriptionLike extends Unsubscribable {
+  unsubscribe(): void;
+  readonly closed: boolean;
+}
+
+type TeardownLogic = Subscription | Unsubscribable | (() => void) | void;
+```
+
+## Creating and Managing Subscriptions
+
+### Basic Subscription
+
+```typescript
+import { interval } from 'rxjs';
+
+const observable = interval(1000);
+const subscription = observable.subscribe(x => console.log(x));
+
+// Later: cancel the ongoing Observable execution
+subscription.unsubscribe();
+```
+
+<Warning>
+  Failing to unsubscribe from long-lived Observables can cause **memory leaks** in your application.
+</Warning>
+
+### Checking Subscription Status
+
+```typescript
+import { interval } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const subscription = interval(1000)
+  .pipe(take(3))
+  .subscribe(x => console.log(x));
+
+console.log('Closed?', subscription.closed); // false
+
+setTimeout(() => {
+  console.log('Closed?', subscription.closed); // true (after completion)
+}, 4000);
+```
+
+## Unsubscribing
+
+### Manual Unsubscription
+
+```typescript
+import { interval } from 'rxjs';
+
+const subscription = interval(1000).subscribe({
+  next: x => console.log('Value:', x)
+});
+
+// Stop after 5 seconds
+setTimeout(() => {
+  subscription.unsubscribe();
+  console.log('Unsubscribed');
+}, 5000);
+```
+
+### Automatic Unsubscription
+
+<Tabs>
+  <Tab title="Completion">
+    ```typescript
+    import { of } from 'rxjs';
+
+    const subscription = of(1, 2, 3).subscribe({
+      next: x => console.log(x),
+      complete: () => console.log('Complete - auto unsubscribed')
+    });
+
+    // No need to manually unsubscribe
+    // Subscription is automatically closed after completion
+    console.log('Closed?', subscription.closed); // true
+    ```
+  </Tab>
+  <Tab title="Error">
+    ```typescript
+    import { throwError } from 'rxjs';
+
+    const subscription = throwError(() => new Error('Oops')).subscribe({
+      error: err => console.error('Error - auto unsubscribed:', err.message)
+    });
+
+    // No need to manually unsubscribe
+    // Subscription is automatically closed after error
+    console.log('Closed?', subscription.closed); // true
+    ```
+  </Tab>
+  <Tab title="Operators">
+    ```typescript
+    import { interval } from 'rxjs';
+    import { take } from 'rxjs/operators';
+
+    const subscription = interval(1000)
+      .pipe(take(3)) // Automatically completes after 3 values
+      .subscribe(x => console.log(x));
+
+    // Automatically unsubscribes after take(3) completes
+    ```
+  </Tab>
+</Tabs>
+
+## Combining Subscriptions
+
+### Adding Child Subscriptions
+
+You can combine multiple subscriptions so that calling `unsubscribe()` on one will unsubscribe all of them:
+
+```typescript
+import { interval } from 'rxjs';
+
+const observable1 = interval(400);
+const observable2 = interval(300);
+
+const subscription = observable1.subscribe(x => console.log('first: ' + x));
+const childSubscription = observable2.subscribe(x => console.log('second: ' + x));
+
+subscription.add(childSubscription);
+
+setTimeout(() => {
+  // Unsubscribes BOTH subscription and childSubscription
+  subscription.unsubscribe();
+}, 1000);
+```
+
+<Info>
+  This pattern is useful for managing multiple related subscriptions together, especially in components.
+</Info>
+
+### Removing Child Subscriptions
+
+```typescript
+import { interval } from 'rxjs';
+
+const subscription = interval(1000).subscribe(x => console.log('parent:', x));
+const child = interval(500).subscribe(x => console.log('child:', x));
+
+subscription.add(child);
+
+// Remove the child subscription
+subscription.remove(child);
+
+// Now unsubscribing parent won't affect child
+subscription.unsubscribe();
+child.unsubscribe(); // Must manually unsubscribe child
+```
+
+## Practical Examples
+
+### Component Lifecycle Management
+
+```typescript
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { interval, Subscription } from 'rxjs';
+
+class DataComponent implements OnInit, OnDestroy {
+  private subscriptions = new Subscription();
+
+  ngOnInit() {
+    // Add multiple subscriptions
+    this.subscriptions.add(
+      this.dataService.getData().subscribe(data => this.handleData(data))
+    );
+    
+    this.subscriptions.add(
+      this.userService.getUser().subscribe(user => this.handleUser(user))
+    );
+    
+    this.subscriptions.add(
+      interval(5000).subscribe(() => this.refresh())
+    );
+  }
+
+  ngOnDestroy() {
+    // Unsubscribe from all subscriptions at once
+    this.subscriptions.unsubscribe();
+  }
+}
+```
+
+### Conditional Unsubscription
+
+```typescript
+import { fromEvent, Subscription } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+let subscription: Subscription | null = null;
+
+function startListening() {
+  if (!subscription || subscription.closed) {
+    subscription = fromEvent(document, 'click')
+      .subscribe(event => console.log('Click:', event));
+  }
+}
+
+function stopListening() {
+  if (subscription && !subscription.closed) {
+    subscription.unsubscribe();
+  }
+}
+
+// Start listening
+startListening();
+
+// Stop after 5 seconds
+setTimeout(stopListening, 5000);
+```
+
+### Request Cancellation
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { Subscription } from 'rxjs';
+
+let requestSubscription: Subscription | null = null;
+
+function searchUsers(term: string) {
+  // Cancel previous request if still pending
+  if (requestSubscription && !requestSubscription.closed) {
+    requestSubscription.unsubscribe();
+  }
+
+  // Make new request
+  requestSubscription = ajax(`/api/users?search=${term}`).subscribe({
+    next: response => console.log('Results:', response),
+    error: err => console.error('Search failed:', err)
+  });
+}
+
+searchUsers('alice');
+// User types quickly...
+searchUsers('alice smith'); // Cancels previous request
+```
+
+### Subscription Pool Pattern
+
+```typescript
+import { Subscription, interval, fromEvent } from 'rxjs';
+
+class SubscriptionPool {
+  private subscriptions = new Subscription();
+
+  add(subscription: Subscription): void {
+    this.subscriptions.add(subscription);
+  }
+
+  unsubscribeAll(): void {
+    this.subscriptions.unsubscribe();
+    this.subscriptions = new Subscription(); // Reset for reuse
+  }
+
+  get isClosed(): boolean {
+    return this.subscriptions.closed;
+  }
+}
+
+// Usage
+const pool = new SubscriptionPool();
+
+pool.add(interval(1000).subscribe(x => console.log('Timer:', x)));
+pool.add(fromEvent(document, 'click').subscribe(e => console.log('Click')));
+
+// Clean up all at once
+setTimeout(() => pool.unsubscribeAll(), 5000);
+```
+
+## Memory Leak Prevention
+
+### Common Leak Scenarios
+
+<Warning>
+  These are common sources of memory leaks in RxJS applications:
+</Warning>
+
+```typescript
+// ✗ BAD: Never completes, never unsubscribed
+interval(1000).subscribe(x => console.log(x));
+
+// ✗ BAD: Component destroyed but subscription lives on
+class Component {
+  ngOnInit() {
+    interval(1000).subscribe(x => this.updateData(x));
+  }
+  // ngOnDestroy - no cleanup!
+}
+
+// ✗ BAD: Event listener never removed
+fromEvent(window, 'resize').subscribe(e => this.handleResize(e));
+```
+
+### Leak Prevention Strategies
+
+<CodeGroup>
+
+```typescript Manual Unsubscribe
+class Component implements OnDestroy {
+  private subscription = new Subscription();
+
+  ngOnInit() {
+    this.subscription.add(
+      interval(1000).subscribe(x => console.log(x))
+    );
+  }
+
+  ngOnDestroy() {
+    this.subscription.unsubscribe();
+  }
+}
+```
+
+```typescript Auto-Complete Operators
+import { takeUntil, take, first } from 'rxjs/operators';
+import { Subject } from 'rxjs';
+
+class Component implements OnDestroy {
+  private destroy$ = new Subject<void>();
+
+  ngOnInit() {
+    // Auto-unsubscribes when destroy$ emits
+    interval(1000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(x => console.log(x));
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+}
+```
+
+```typescript Async Pipe (Angular)
+@Component({
+  template: `
+    <div *ngFor="let item of items$ | async">
+      {{ item }}
+    </div>
+  `
+})
+class Component {
+  // Async pipe automatically subscribes and unsubscribes
+  items$ = this.service.getItems();
+}
+```
+
+</CodeGroup>
+
+## Best Practices
+
+### 1. Always Unsubscribe from Infinite Streams
+
+<Tip>
+  Infinite Observables (interval, fromEvent, etc.) must be manually unsubscribed unless they complete via operators.
+</Tip>
+
+```typescript
+// Infinite - needs unsubscribe
+const sub1 = interval(1000).subscribe();
+sub1.unsubscribe();
+
+// Finite - auto unsubscribes
+const sub2 = of(1, 2, 3).subscribe();
+// No manual unsubscribe needed
+```
+
+### 2. Group Related Subscriptions
+
+```typescript
+class Dashboard implements OnDestroy {
+  private subs = new Subscription();
+
+  ngOnInit() {
+    this.subs.add(this.loadUsers());
+    this.subs.add(this.loadMetrics());
+    this.subs.add(this.startPolling());
+  }
+
+  ngOnDestroy() {
+    this.subs.unsubscribe();
+  }
+}
+```
+
+### 3. Use Operators to Auto-Complete
+
+```typescript
+import { takeUntil, take, takeWhile, first } from 'rxjs/operators';
+
+// Take first value
+stream$.pipe(first()).subscribe();
+
+// Take n values
+stream$.pipe(take(5)).subscribe();
+
+// Take until condition
+stream$.pipe(takeWhile(x => x < 100)).subscribe();
+
+// Take until notifier
+stream$.pipe(takeUntil(stop$)).subscribe();
+```
+
+### 4. Check Before Unsubscribing
+
+```typescript
+if (subscription && !subscription.closed) {
+  subscription.unsubscribe();
+}
+```
+
+### 5. Avoid Subscription Nesting
+
+```typescript
+// ✗ BAD: Nested subscriptions
+users$.subscribe(user => {
+  posts$.subscribe(posts => {
+    comments$.subscribe(comments => {
+      // Subscription hell!
+    });
+  });
+});
+
+// ✓ GOOD: Use operators
+import { switchMap, map } from 'rxjs/operators';
+
+users$.pipe(
+  switchMap(user => posts$),
+  switchMap(posts => comments$)
+).subscribe(comments => {
+  // Single subscription point
+});
+```
+
+## Common Patterns
+
+### Cleanup on Condition
+
+```typescript
+import { interval, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+
+const stop$ = new Subject<void>();
+
+interval(1000)
+  .pipe(takeUntil(stop$))
+  .subscribe(x => console.log(x));
+
+// Stop when condition is met
+if (someCondition) {
+  stop$.next();
+}
+```
+
+### Reusable Subscription Manager
+
+```typescript
+import { Subscription, Observable } from 'rxjs';
+
+class SubManager {
+  private subs = new Subscription();
+
+  sink<T>(observable: Observable<T>, next: (value: T) => void): void {
+    this.subs.add(observable.subscribe({ next }));
+  }
+
+  unsubscribe(): void {
+    this.subs.unsubscribe();
+    this.subs = new Subscription();
+  }
+}
+
+// Usage
+const manager = new SubManager();
+manager.sink(data$, data => console.log(data));
+manager.sink(user$, user => console.log(user));
+manager.unsubscribe(); // Clean all
+```
+
+## When to Unsubscribe
+
+| Observable Type | Need to Unsubscribe? |
+|-----------------|---------------------|
+| `of`, `from` (array) | No - completes immediately |
+| `interval`, `timer` (infinite) | Yes |
+| `fromEvent` | Yes |
+| HTTP requests (single) | No - completes after response |
+| WebSocket | Yes |
+| Subject (infinite) | Yes |
+| With `take`, `first`, `takeUntil` | No - operators handle it |
+
+## Related Concepts
+
+- [Observable](/concepts/observable) - Creates Subscriptions when subscribed to
+- [Observer](/concepts/observer) - Receives notifications during Subscription
+- [Operators](/concepts/operators) - Can automatically complete Subscriptions
+- [Subject](/concepts/subject) - Can be unsubscribed like any Subscription

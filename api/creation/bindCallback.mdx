@@ -1,0 +1,284 @@
+---
+title: 'bindCallback'
+description: 'Convert a callback API to a function that returns an Observable'
+---
+
+# bindCallback
+
+Converts a callback API to a function that returns an Observable. Useful for converting Node.js-style APIs, jQuery methods, or any callback-based API to the Observable pattern.
+
+## Import
+
+```typescript
+import { bindCallback } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function bindCallback<A extends readonly unknown[], R extends readonly unknown[]>(
+  callbackFunc: (...args: [...A, (...res: R) => void]) => void,
+  schedulerLike?: SchedulerLike
+): (...arg: A) => Observable<R extends [] ? void : R extends [any] ? R[0] : R>;
+```
+
+## Parameters
+
+<ParamField path="callbackFunc" type="Function" required>
+  A function with a callback as the last parameter. The callback will be called when the function completes.
+</ParamField>
+
+<ParamField path="schedulerLike" type="SchedulerLike">
+  Optional scheduler to control when the function is called and when results are emitted. By default, execution is synchronous.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Function" type="(...args) => Observable">
+  A function that takes the same parameters as `callbackFunc` (except the callback). When called, it returns an Observable that emits the values passed to the callback.
+</ResponseField>
+
+## Description
+
+`bindCallback` is not an operator because its input and output are not Observables. It takes a function `func` that accepts a callback as its last parameter and returns a new function that:
+
+1. Takes the same parameters as `func` (except the callback)
+2. Returns an Observable
+3. When subscribed, calls the original function
+4. Emits values passed to the callback
+5. Completes after the callback is called
+
+**Important:** The input function is only called when you subscribe to the returned Observable, not when you call the wrapper function.
+
+## Examples
+
+### Convert jQuery getJSON
+
+```typescript
+import { bindCallback } from 'rxjs';
+import * as jQuery from 'jquery';
+
+// jQuery.getJSON has signature: getJSON(url, callback)
+const getJSONAsObservable = bindCallback(jQuery.getJSON);
+const result$ = getJSONAsObservable('/my/url');
+
+result$.subscribe({
+  next: data => console.log('Data:', data),
+  error: err => console.error('Error:', err)
+});
+```
+
+### Multiple Callback Arguments
+
+When the callback receives multiple arguments, they are emitted as an array:
+
+```typescript
+import { bindCallback } from 'rxjs';
+
+const someFunction = (x: number, y: string, callback: (a: number, b: string, c: object) => void) => {
+  callback(x, y, { someProperty: 'someValue' });
+};
+
+const boundSomeFunction = bindCallback(someFunction);
+
+boundSomeFunction(5, 'test').subscribe(values => {
+  console.log(values); // [5, 'test', { someProperty: 'someValue' }]
+});
+```
+
+### With Scheduler
+
+<CodeGroup>
+
+```typescript Synchronous (default)
+import { bindCallback } from 'rxjs';
+
+function iCallMyCallbackSynchronously(cb: () => void) {
+  cb();
+}
+
+const boundSyncFn = bindCallback(iCallMyCallbackSynchronously);
+
+boundSyncFn().subscribe(() => console.log('I was sync!'));
+console.log('This happened...');
+
+// Output:
+// I was sync!
+// This happened...
+```
+
+```typescript Asynchronous
+import { bindCallback, asyncScheduler } from 'rxjs';
+
+function iCallMyCallbackSynchronously(cb: () => void) {
+  cb();
+}
+
+const boundAsyncFn = bindCallback(
+  iCallMyCallbackSynchronously,
+  asyncScheduler
+);
+
+boundAsyncFn().subscribe(() => console.log('I was async!'));
+console.log('This happened...');
+
+// Output:
+// This happened...
+// I was async!
+```
+
+</CodeGroup>
+
+### File System API Example
+
+```typescript
+import { bindCallback } from 'rxjs';
+import * as fs from 'fs';
+
+// Note: For Node.js callbacks with (err, result) signature,
+// use bindNodeCallback instead!
+
+// But if you have a regular callback API:
+const customReadFile = (path: string, callback: (data: string) => void) => {
+  fs.readFile(path, 'utf8', (err, data) => {
+    if (!err) callback(data);
+  });
+};
+
+const readFileAsObservable = bindCallback(customReadFile);
+
+readFileAsObservable('./file.txt').subscribe({
+  next: content => console.log('File content:', content),
+  complete: () => console.log('Done reading file')
+});
+```
+
+### Object Method
+
+When using `bindCallback` with object methods, preserve the context:
+
+```typescript
+import { bindCallback } from 'rxjs';
+
+class MyClass {
+  value = 42;
+  
+  methodWithCallback(x: number, callback: (result: number) => void) {
+    callback(x + this.value);
+  }
+}
+
+const obj = new MyClass();
+const boundMethod = bindCallback(obj.methodWithCallback);
+
+// Call with proper context
+boundMethod.call(obj, 10).subscribe(result => {
+  console.log(result); // 52
+});
+```
+
+## Common Use Cases
+
+### Wrapping Geolocation API
+
+```typescript
+import { bindCallback } from 'rxjs';
+
+const getCurrentPosition = bindCallback<
+  [PositionOptions?],
+  [GeolocationPosition]
+>((options, callback) => {
+  navigator.geolocation.getCurrentPosition(callback, () => {}, options);
+});
+
+getCurrentPosition().subscribe(position => {
+  console.log('Latitude:', position.coords.latitude);
+  console.log('Longitude:', position.coords.longitude);
+});
+```
+
+### Animation Frame API
+
+```typescript
+import { bindCallback } from 'rxjs';
+import { repeat, takeWhile } from 'rxjs/operators';
+
+const animationFrame$ = bindCallback(requestAnimationFrame)();
+
+let frame = 0;
+animationFrame$.pipe(
+  repeat(),
+  takeWhile(() => frame++ < 100)
+).subscribe(timestamp => {
+  console.log('Frame:', frame, 'Time:', timestamp);
+});
+```
+
+## Important Notes
+
+<Note>
+  The callback is only called ONCE per subscription. If you need to listen for multiple events, use `fromEvent` or `fromEventPattern` instead.
+</Note>
+
+<Warning>
+  If the callback function expects an error-first callback (Node.js style), use `bindNodeCallback` instead. Using `bindCallback` with Node.js style callbacks will treat the error parameter as a regular value.
+</Warning>
+
+<Tip>
+  The returned Observable emits a single value and completes immediately after the callback is invoked.
+</Tip>
+
+## Behavior Details
+
+### When is the function called?
+
+The original function is **NOT** called when you call the wrapper function. It's called when you **subscribe** to the Observable:
+
+```typescript
+import { bindCallback } from 'rxjs';
+
+const wrapped = bindCallback((cb) => {
+  console.log('Function called!');
+  cb(42);
+});
+
+const observable = wrapped(); // Nothing logged yet
+console.log('Observable created');
+
+observable.subscribe(x => console.log('Value:', x));
+// Output:
+// Observable created
+// Function called!
+// Value: 42
+```
+
+### Multiple Subscriptions
+
+Each subscription calls the function again:
+
+```typescript
+import { bindCallback } from 'rxjs';
+
+let callCount = 0;
+const wrapped = bindCallback((cb) => {
+  callCount++;
+  cb(callCount);
+});
+
+const observable = wrapped();
+
+observable.subscribe(x => console.log('First:', x));  // First: 1
+observable.subscribe(x => console.log('Second:', x)); // Second: 2
+```
+
+## Related Operators
+
+- **[bindNodeCallback](/api/creation/bindNodeCallback)** - For Node.js error-first callbacks
+- **[from](/api/creation/from)** - Convert promises and other sources
+- **[fromEvent](/api/creation/fromEvent)** - For event emitters
+- **[fromEventPattern](/api/creation/fromEventPattern)** - For custom event APIs
+- **[defer](/api/creation/defer)** - Lazy Observable creation
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/bindCallback)

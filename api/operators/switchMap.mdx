@@ -1,0 +1,407 @@
+---
+title: switchMap
+description: Projects values to Observables, canceling previous inner Observable on new emissions
+---
+
+## Overview
+
+Projects each source value to an Observable (the "inner" Observable), but cancels the previous inner Observable whenever a new source value arrives. Only the most recent inner Observable's emissions reach the output.
+
+<Info>
+  `switchMap` is perfect for scenarios where only the latest result matters, such as search autocomplete, navigation, or any case where newer requests should cancel older ones.
+</Info>
+
+## Type Signature
+
+```typescript
+function switchMap<T, O extends ObservableInput<any>>(
+  project: (value: T, index: number) => O
+): OperatorFunction<T, ObservedValueOf<O>>
+```
+
+## Parameters
+
+<ParamField path="project" type="(value: T, index: number) => O" required>
+  A function that maps each source value to an Observable (or Promise, Array, etc.). The function receives:
+  - `value`: The emitted value from the source
+  - `index`: The zero-based index of the emission
+  
+  Must return an ObservableInput. Previous inner Observables are unsubscribed when this is called.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, ObservedValueOf<O>>">
+  A function that returns an Observable that emits values only from the most recently projected inner Observable.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Search Autocomplete
+
+<CodeGroup>
+```typescript Search Input
+import { fromEvent, switchMap, debounceTime, map } from 'rxjs';
+
+const searchInput = document.getElementById('search') as HTMLInputElement;
+const searches = fromEvent(searchInput, 'input');
+
+searches.pipe(
+  debounceTime(300),
+  map(event => (event.target as HTMLInputElement).value),
+  filter(query => query.length > 2),
+  switchMap(query => 
+    fetch(`/api/search?q=${encodeURIComponent(query)}`)
+      .then(res => res.json())
+  )
+).subscribe(results => {
+  console.log('Search results:', results);
+  displayResults(results);
+});
+
+// Type "hello" quickly:
+// - Typing 'h', 'he', 'hel', 'hell', 'hello'
+// - Only the final "hello" search executes
+// - Previous incomplete searches are cancelled
+```
+
+```typescript Interval Switching
+import { of, switchMap, interval } from 'rxjs';
+
+const switched = of(1, 2, 3).pipe(
+  switchMap(x => of(x, x ** 2, x ** 3))
+);
+
+switched.subscribe(x => console.log(x));
+// Output (synchronous):
+// 1, 1, 1   (from 1)
+// 2, 4, 8   (from 2, cancels 1)
+// 3, 9, 27  (from 3, cancels 2)
+```
+</CodeGroup>
+
+### Restarting Intervals
+
+```typescript
+import { fromEvent, switchMap, interval } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(
+  switchMap(() => interval(1000))
+);
+
+result.subscribe(x => console.log(x));
+
+// Click 1: 0, 1, 2, 3, ...
+// Click 2 (during counting): cancels previous, starts new: 0, 1, 2, ...
+// Each click restarts the counter from 0
+```
+
+### Navigation with Route Changes
+
+```typescript
+import { fromEvent, switchMap, from } from 'rxjs';
+
+interface Route {
+  path: string;
+  data: any;
+}
+
+const routeChanges = new Subject<string>();
+
+routeChanges.pipe(
+  switchMap(path => {
+    console.log(`Loading route: ${path}`);
+    return from(
+      fetch(`/api/routes${path}`)
+        .then(res => res.json())
+    );
+  })
+).subscribe(
+  routeData => {
+    console.log('Route data loaded:', routeData);
+    renderRoute(routeData);
+  },
+  error => console.error('Route load failed:', error)
+);
+
+// Fast navigation:
+routeChanges.next('/home');
+routeChanges.next('/about');  // Cancels /home request
+routeChanges.next('/contact'); // Cancels /about request
+// Only /contact request completes
+```
+
+### Real-time Data with User Selection
+
+```typescript
+import { fromEvent, switchMap, interval, map } from 'rxjs';
+
+interface Sensor {
+  id: string;
+  name: string;
+}
+
+const sensorSelect = document.getElementById('sensor-select') as HTMLSelectElement;
+const sensorChanges = fromEvent(sensorSelect, 'change');
+
+sensorChanges.pipe(
+  map(event => (event.target as HTMLSelectElement).value),
+  switchMap(sensorId => {
+    console.log(`Subscribing to sensor: ${sensorId}`);
+    
+    // Poll sensor data every 2 seconds
+    return interval(2000).pipe(
+      switchMap(() => 
+        fetch(`/api/sensors/${sensorId}/data`)
+          .then(res => res.json())
+      ),
+      map(data => ({ sensorId, data }))
+    );
+  })
+).subscribe(({ sensorId, data }) => {
+  console.log(`Data from ${sensorId}:`, data);
+  updateSensorDisplay(data);
+});
+
+// When user selects a different sensor:
+// - Previous sensor polling stops immediately
+// - New sensor polling begins
+```
+
+## Marble Diagram
+
+```
+Source:     --1-------2-------3-------|
+Project(1):   a---b---c---d---e---|
+Project(2):           f---g---h---|
+Project(3):                   i---j---k---|
+Result:     --a---b---f---g---i---j---k---|
+                  ↑ cancelled    ↑ cancelled
+```
+
+Each new source emission cancels the previous inner Observable.
+
+## Common Use Cases
+
+1. **Type-ahead/Autocomplete**: Cancel outdated search requests
+2. **Navigation**: Cancel previous route loads when navigating
+3. **Real-time Subscriptions**: Switch between data streams
+4. **Live Search**: Update results as user types
+5. **Dashboard Filters**: Switch data based on filter changes
+6. **Video/Audio Playback**: Switch media sources
+7. **Polling**: Restart polling when parameters change
+
+<Tip>
+  Use `switchMap` when you only care about the most recent result and want to automatically cancel previous operations. This prevents race conditions and wasted resources.
+</Tip>
+
+## Advanced Example: Paginated Data with Filters
+
+```typescript
+import { combineLatest, switchMap, startWith } from 'rxjs';
+
+interface Filter {
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+}
+
+interface PageRequest {
+  page: number;
+  filter: Filter;
+}
+
+const page$ = new Subject<number>();
+const filter$ = new Subject<Filter>();
+
+// Combine page and filter changes
+const dataRequest$ = combineLatest([
+  page$.pipe(startWith(1)),
+  filter$.pipe(startWith({}))
+]).pipe(
+  map(([page, filter]) => ({ page, filter })),
+  switchMap(({ page, filter }) => {
+    console.log(`Loading page ${page} with filters:`, filter);
+    
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      ...filter
+    });
+    
+    return from(
+      fetch(`/api/products?${queryParams}`)
+        .then(res => res.json())
+    ).pipe(
+      map(response => ({
+        ...response,
+        page,
+        filter
+      }))
+    );
+  })
+);
+
+dataRequest$.subscribe(data => {
+  console.log('Data loaded:', data);
+  renderProducts(data);
+});
+
+// User interactions:
+filter$.next({ category: 'electronics' }); // Loads page 1 with filter
+page$.next(2);                              // Loads page 2 with same filter
+filter$.next({ minPrice: 100 });            // Cancels page 2, loads page 1 with new filter
+```
+
+### Dependent Dropdown Menus
+
+```typescript
+import { fromEvent, switchMap, map, startWith } from 'rxjs';
+
+const countrySelect = document.getElementById('country') as HTMLSelectElement;
+const stateSelect = document.getElementById('state') as HTMLSelectElement;
+
+const countryChanges$ = fromEvent(countrySelect, 'change').pipe(
+  map(e => (e.target as HTMLSelectElement).value),
+  startWith('US')
+);
+
+// When country changes, load states for that country
+const states$ = countryChanges$.pipe(
+  switchMap(country => {
+    console.log(`Loading states for ${country}`);
+    return from(
+      fetch(`/api/countries/${country}/states`)
+        .then(res => res.json())
+    );
+  })
+);
+
+states$.subscribe(states => {
+  // Clear and populate state dropdown
+  stateSelect.innerHTML = '';
+  states.forEach(state => {
+    const option = document.createElement('option');
+    option.value = state.code;
+    option.textContent = state.name;
+    stateSelect.appendChild(option);
+  });
+});
+```
+
+### Cancellable File Upload
+
+```typescript
+import { fromEvent, switchMap, from, tap } from 'rxjs';
+
+const fileInput = document.getElementById('file') as HTMLInputElement;
+const uploadButton = document.getElementById('upload');
+const cancelButton = document.getElementById('cancel');
+
+const uploads$ = fromEvent(uploadButton, 'click').pipe(
+  switchMap(() => {
+    const file = fileInput.files?.[0];
+    if (!file) return EMPTY;
+    
+    console.log(`Starting upload: ${file.name}`);
+    showProgress(0);
+    
+    return new Observable(observer => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const percent = (e.loaded / e.total) * 100;
+          showProgress(percent);
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status === 200) {
+          observer.next(JSON.parse(xhr.responseText));
+          observer.complete();
+        } else {
+          observer.error(new Error(`Upload failed: ${xhr.status}`));
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        observer.error(new Error('Upload error'));
+      });
+      
+      xhr.open('POST', '/api/upload');
+      xhr.send(formData);
+      
+      // Cleanup: abort XHR when unsubscribed
+      return () => {
+        console.log('Upload cancelled');
+        xhr.abort();
+      };
+    });
+  })
+);
+
+uploads$.subscribe(
+  response => console.log('Upload complete:', response),
+  error => console.error('Upload failed:', error)
+);
+
+// Cancel button triggers new upload (empty), cancelling previous
+fromEvent(cancelButton, 'click').subscribe(() => {
+  uploadButton.click(); // Trigger new empty upload to cancel current
+});
+```
+
+## Comparison with Other Flattening Operators
+
+<CodeGroup>
+```typescript switchMap
+// Cancels previous inner Observable
+clicks.pipe(
+  switchMap(() => interval(1000))
+)
+// Click 1: 0, 1, 2, ...
+// Click 2: cancels previous, 0, 1, 2, ...
+```
+
+```typescript mergeMap  
+// All inner Observables run concurrently
+clicks.pipe(
+  mergeMap(() => interval(1000))
+)
+// Click 1: 0, 1, 2, ...
+// Click 2: also 0, 1, 2, ... (concurrent)
+```
+
+```typescript concatMap
+// Queues inner Observables
+clicks.pipe(
+  concatMap(() => interval(1000).pipe(take(3)))
+)
+// Click 1: 0, 1, 2 (completes)
+// Click 2: waits, then 0, 1, 2
+```
+
+```typescript exhaustMap
+// Ignores new values while inner is active
+clicks.pipe(
+  exhaustMap(() => interval(1000).pipe(take(3)))
+)
+// Click 1: 0, 1, 2
+// Clicks during: ignored
+```
+</CodeGroup>
+
+<Warning>
+  Cancellation only works if the inner Observable respects unsubscription. Native Promises cannot be cancelled, but their results will be ignored when switched.
+</Warning>
+
+## Related Operators
+
+- **[mergeMap](/api/operators/mergemap)** - Concurrent flattening without cancellation
+- **[concatMap](/api/operators/concatmap)** - Sequential flattening
+- **[exhaustMap](/api/operators/exhaustmap)** - Ignore new values while inner is active
+- **[switchAll](/api/operators/switchall)** - Flatten higher-order Observable by switching
+- **[switchMapTo](/api/operators/switchmapto)** - Switch to a constant Observable

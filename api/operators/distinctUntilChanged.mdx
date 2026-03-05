@@ -1,0 +1,340 @@
+---
+title: distinctUntilChanged
+description: Filters out consecutive duplicate values from an Observable stream
+---
+
+## Overview
+
+Returns an Observable that emits all values pushed by the source observable if they are distinct in comparison to the **last value** the result observable emitted.
+
+<Note>
+Unlike `distinct`, this operator only compares each value with the **previous** emitted value, not all previous values. This makes it memory-efficient and suitable for long-running streams.
+</Note>
+
+## Type Signature
+
+```typescript
+function distinctUntilChanged<T>(
+  comparator?: (previous: T, current: T) => boolean
+): MonoTypeOperatorFunction<T>
+
+function distinctUntilChanged<T, K>(
+  comparator: (previous: K, current: K) => boolean,
+  keySelector: (value: T) => K
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="comparator" type="(previous: K, current: K) => boolean" optional>
+  A function used to compare the previous and current keys for equality. Returns `true` if the values are considered equal (and the current value should be skipped).
+  
+  Defaults to a `===` check if not provided.
+</ParamField>
+
+<ParamField path="keySelector" type="(value: T) => K" optional>
+  Used to select a key value to be passed to the `comparator`. If provided, the comparator will compare keys rather than the full values.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that emits items from the source Observable with distinct consecutive values.
+
+## How It Works
+
+### Without keySelector:
+1. **Always emits** the first value
+2. For subsequent values, compares with the **previously emitted value**
+3. If the comparator returns `false` (values are different), **emits** the value
+4. If the comparator returns `true` (values are the same), **skips** the value
+
+### With keySelector:
+1. **Always emits** the first value
+2. Applies `keySelector` to extract a key from each value
+3. Compares the current key with the **previous key** using the comparator
+4. Emits the **value** (not the key) if keys are different
+
+## Usage Examples
+
+### Basic Example: Filter Consecutive Duplicates
+
+```typescript
+import { of, distinctUntilChanged } from 'rxjs';
+
+of(1, 1, 1, 2, 2, 2, 1, 1, 3, 3)
+  .pipe(distinctUntilChanged())
+  .subscribe(console.log);
+
+// Output:
+// 1
+// 2
+// 1
+// 3
+```
+
+<Note>
+Notice that `1` is emitted twice because it's distinct from the _previously emitted_ value (2), not from _all previous values_.
+</Note>
+
+### Custom Comparator
+
+```typescript
+import { of, distinctUntilChanged } from 'rxjs';
+
+interface Build {
+  engineVersion: string;
+  transmissionVersion: string;
+}
+
+const builds$ = of<Build>(
+  { engineVersion: '1.1.0', transmissionVersion: '1.2.0' },
+  { engineVersion: '1.1.0', transmissionVersion: '1.4.0' },
+  { engineVersion: '1.3.0', transmissionVersion: '1.4.0' },
+  { engineVersion: '1.3.0', transmissionVersion: '1.5.0' },
+  { engineVersion: '2.0.0', transmissionVersion: '1.5.0' }
+);
+
+const totallyDifferent$ = builds$.pipe(
+  distinctUntilChanged((prev, curr) => {
+    // Only emit if BOTH versions changed
+    return (
+      prev.engineVersion === curr.engineVersion ||
+      prev.transmissionVersion === curr.transmissionVersion
+    );
+  })
+);
+
+totallyDifferent$.subscribe(console.log);
+// Output:
+// { engineVersion: '1.1.0', transmissionVersion: '1.2.0' }
+// { engineVersion: '1.3.0', transmissionVersion: '1.4.0' }
+// { engineVersion: '2.0.0', transmissionVersion: '1.5.0' }
+```
+
+### Using keySelector
+
+```typescript
+import { of, distinctUntilChanged } from 'rxjs';
+
+interface AccountUpdate {
+  updatedBy: string;
+  data: any[];
+}
+
+const updates$ = of<AccountUpdate>(
+  { updatedBy: 'alice', data: [] },
+  { updatedBy: 'alice', data: [] },
+  { updatedBy: 'bob', data: [] },
+  { updatedBy: 'bob', data: [] },
+  { updatedBy: 'alice', data: [] }
+);
+
+const changedHands$ = updates$.pipe(
+  distinctUntilChanged(undefined, update => update.updatedBy)
+);
+
+changedHands$.subscribe(console.log);
+// Output:
+// { updatedBy: 'alice', data: [] }
+// { updatedBy: 'bob', data: [] }
+// { updatedBy: 'alice', data: [] }
+```
+
+<CodeGroup>
+```typescript State Management
+import { BehaviorSubject, distinctUntilChanged } from 'rxjs';
+
+interface AppState {
+  user: { id: string; name: string };
+  settings: { theme: string };
+}
+
+const state$ = new BehaviorSubject<AppState>({
+  user: { id: '1', name: 'Alice' },
+  settings: { theme: 'dark' }
+});
+
+// Only emit when user changes
+const user$ = state$.pipe(
+  distinctUntilChanged(
+    (prev, curr) => prev.user.id === curr.user.id,
+    state => state.user
+  )
+);
+
+user$.subscribe(state => {
+  console.log('User changed:', state.user);
+});
+```
+
+```typescript Form Changes
+import { fromEvent, distinctUntilChanged, map } from 'rxjs';
+
+const input = document.querySelector('#search') as HTMLInputElement;
+
+const trimmedValues$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value.trim()),
+  distinctUntilChanged() // Skip if trimmed value hasn't changed
+);
+
+trimmedValues$.subscribe(value => {
+  console.log('Search term changed:', value);
+  performSearch(value);
+});
+```
+
+```typescript Record High Temperatures
+import { of, distinctUntilChanged } from 'rxjs';
+
+const temps$ = of(30, 31, 20, 34, 33, 29, 35, 20);
+
+const recordHighs$ = temps$.pipe(
+  distinctUntilChanged((prevHigh, temp) => {
+    // If current temp is less than or equal to previous record,
+    // the record hasn't changed (return true to skip)
+    return temp <= prevHigh;
+  })
+);
+
+recordHighs$.subscribe(console.log);
+// Output: 30, 31, 34, 35
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `distinctUntilChanged` when:
+- Filtering **consecutive duplicate** values
+- Optimizing **state management** streams
+- Preventing unnecessary **re-renders** or **API calls**
+- Cleaning up **noisy sensors** or event streams
+- Working with **long-running streams** (memory efficient)
+
+### Don't use `distinctUntilChanged` when:
+- You need to filter **all duplicates** across the stream (use `distinct` instead)
+- Values aren't comparable with `===` and you haven't provided a comparator
+- You want **every value** regardless of duplicates
+
+## Common Patterns
+
+### Prevent Duplicate API Calls
+
+```typescript
+import { fromEvent, map, distinctUntilChanged, debounceTime, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(300),
+  distinctUntilChanged(), // Don't search if value didn't actually change
+  switchMap(term => ajax.getJSON(`/api/search?q=${term}`))
+);
+
+search$.subscribe(results => console.log(results));
+```
+
+### State Slice Selection
+
+```typescript
+import { distinctUntilChanged, map } from 'rxjs';
+
+const state$ = getStateStream();
+
+// Select and monitor a specific slice of state
+const theme$ = state$.pipe(
+  map(state => state.settings.theme),
+  distinctUntilChanged()
+);
+
+theme$.subscribe(theme => {
+  applyTheme(theme);
+});
+```
+
+### Deep Equality Check
+
+```typescript
+import { distinctUntilChanged } from 'rxjs';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const users$ = getUserStream();
+
+const distinctUsers$ = users$.pipe(
+  distinctUntilChanged((prev, curr) => {
+    // Deep equality check
+    return JSON.stringify(prev) === JSON.stringify(curr);
+  })
+);
+
+distinctUsers$.subscribe(user => {
+  console.log('User actually changed:', user);
+});
+```
+
+<Warning>
+Using `JSON.stringify` for deep equality is convenient but can be slow for large objects. Consider using a dedicated deep-equality library for better performance.
+</Warning>
+
+### Case-Insensitive Comparison
+
+```typescript
+import { fromEvent, map, distinctUntilChanged } from 'rxjs';
+
+const input = document.querySelector('#tag') as HTMLInputElement;
+
+const tags$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  distinctUntilChanged((prev, curr) => 
+    prev.toLowerCase() === curr.toLowerCase()
+  )
+);
+
+tags$.subscribe(tag => {
+  console.log('New tag:', tag);
+});
+```
+
+<Tip>
+Combine `distinctUntilChanged` with `debounceTime` for search inputs to prevent both rapid changes and duplicate values from triggering API calls.
+</Tip>
+
+## Default Behavior
+
+```typescript
+import { of, distinctUntilChanged } from 'rxjs';
+
+// With primitive values, default === comparison works
+of('a', 'a', 'b', 'b', 'a').pipe(
+  distinctUntilChanged()
+).subscribe(console.log);
+// Output: 'a', 'b', 'a'
+
+// With objects, === compares references
+const obj1 = { id: 1 };
+const obj2 = { id: 1 }; // Different reference!
+
+of(obj1, obj1, obj2, obj2).pipe(
+  distinctUntilChanged()
+).subscribe(console.log);
+// Output: obj1, obj2 (both emitted because different references)
+
+// Use comparator for value equality
+of(obj1, obj1, obj2, obj2).pipe(
+  distinctUntilChanged((a, b) => a.id === b.id)
+).subscribe(console.log);
+// Output: obj1 (obj2 skipped because id is the same)
+```
+
+## Related Operators
+
+- **[distinct](/api/operators/distinct)** - Filters all duplicates across the entire stream
+- **[distinctUntilKeyChanged](/api/operators/distinctUntilKeyChanged)** - Shorthand for distinctUntilChanged with key selector
+- **[filter](/api/operators/filter)** - General purpose filtering
+- **[debounceTime](/api/operators/debounceTime)** - Often combined to reduce rate

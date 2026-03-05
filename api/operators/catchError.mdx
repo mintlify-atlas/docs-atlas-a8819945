@@ -1,0 +1,540 @@
+---
+title: catchError
+description: Catches errors on the Observable and returns a new Observable or throws an error.
+---
+
+## Overview
+
+`catchError` intercepts errors from the source Observable and allows you to handle them gracefully by returning a new Observable, retrying the source, or transforming the error. This operator only listens to the error channel and forwards all normal notifications.
+
+<Tip>
+  Essential for error handling in Observable chains. Use it to provide fallback values, retry logic, or graceful degradation when operations fail.
+</Tip>
+
+## Type Signature
+
+```typescript
+export function catchError<T, O extends ObservableInput<any>>(
+  selector: (err: any, caught: Observable<T>) => O
+): OperatorFunction<T, T | ObservedValueOf<O>>
+```
+
+## Parameters
+
+<ParamField path="selector" type="(err: any, caught: Observable<T>) => ObservableInput" required>
+  A function that receives the error and the source Observable. It should return:
+  - A new Observable to continue with
+  - The `caught` parameter to retry the source
+  - Throw an error to propagate a different error
+</ParamField>
+
+### Selector Function Parameters
+
+<ParamField path="err" type="any">
+  The error that was caught from the source Observable.
+</ParamField>
+
+<ParamField path="caught" type="Observable<T>">
+  The source Observable, which can be returned to retry the operation.
+</ParamField>
+
+## Returns
+
+`OperatorFunction<T, T | ObservedValueOf<O>>` - An operator function that returns an Observable that originates from either the source or the Observable returned by the selector function.
+
+## Usage Examples
+
+### Basic Example: Continue with Fallback
+
+<CodeGroup>
+```typescript Basic Fallback
+import { of, map, catchError } from 'rxjs';
+
+of(1, 2, 3, 4, 5)
+  .pipe(
+    map(n => {
+      if (n === 4) {
+        throw 'four!';
+      }
+      return n;
+    }),
+    catchError(err => of('I', 'II', 'III', 'IV', 'V'))
+  )
+  .subscribe(x => console.log(x));
+
+// Output:
+// 1
+// 2
+// 3
+// I
+// II
+// III
+// IV
+// V
+```
+
+```typescript Retry on Error
+import { of, map, catchError, take } from 'rxjs';
+
+of(1, 2, 3, 4, 5)
+  .pipe(
+    map(n => {
+      if (n === 4) {
+        throw 'four!';
+      }
+      return n;
+    }),
+    catchError((err, caught) => caught),
+    take(30)
+  )
+  .subscribe(x => console.log(x));
+
+// Output (retries infinitely until take completes):
+// 1, 2, 3, 1, 2, 3, 1, 2, 3...
+```
+</CodeGroup>
+
+### Real-World Example: API Request with Fallback
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, of, map } from 'rxjs';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface CachedUser {
+  id: string;
+  name: string;
+  email: string;
+  cached: boolean;
+}
+
+function fetchUser(userId: string): Observable<User> {
+  return ajax.getJSON<User>(`/api/users/${userId}`).pipe(
+    catchError(err => {
+      console.warn('API failed, loading from cache:', err.message);
+      return loadFromCache(userId);
+    })
+  );
+}
+
+function loadFromCache(userId: string): Observable<User> {
+  const cached = localStorage.getItem(`user_${userId}`);
+  if (cached) {
+    return of(JSON.parse(cached));
+  }
+  return throwError(() => new Error('No cached data available'));
+}
+
+fetchUser('123').subscribe({
+  next: user => {
+    console.log('User loaded:', user);
+    displayUser(user);
+  },
+  error: err => {
+    console.error('Failed to load user:', err.message);
+    showErrorMessage('Unable to load user data');
+  }
+});
+```
+
+### Graceful Degradation for Multiple Services
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, of } from 'rxjs';
+
+interface DashboardData {
+  analytics: any | null;
+  notifications: any | null;
+  settings: any | null;
+  error: string | null;
+}
+
+function loadDashboard(): Observable<DashboardData> {
+  return forkJoin({
+    analytics: ajax.getJSON('/api/analytics').pipe(
+      catchError(err => {
+        console.error('Analytics failed:', err);
+        return of(null);
+      })
+    ),
+    notifications: ajax.getJSON('/api/notifications').pipe(
+      catchError(err => {
+        console.error('Notifications failed:', err);
+        return of(null);
+      })
+    ),
+    settings: ajax.getJSON('/api/settings').pipe(
+      catchError(err => {
+        console.error('Settings failed:', err);
+        return of(null);
+      })
+    )
+  }).pipe(
+    map(data => ({ ...data, error: null })),
+    catchError(err => of({
+      analytics: null,
+      notifications: null,
+      settings: null,
+      error: err.message
+    }))
+  );
+}
+
+loadDashboard().subscribe((data: DashboardData) => {
+  if (data.analytics) displayAnalytics(data.analytics);
+  if (data.notifications) displayNotifications(data.notifications);
+  if (data.settings) displaySettings(data.settings);
+  
+  if (!data.analytics && !data.notifications && !data.settings) {
+    showErrorMessage('Unable to load dashboard data');
+  }
+});
+```
+
+### Error Transformation and Logging
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, throwError, tap } from 'rxjs';
+
+interface APIError {
+  message: string;
+  code: string;
+  timestamp: number;
+  originalError: any;
+}
+
+function fetchDataWithErrorTracking(endpoint: string): Observable<any> {
+  return ajax.getJSON(endpoint).pipe(
+    catchError(err => {
+      const apiError: APIError = {
+        message: err.message || 'Unknown error',
+        code: err.status || 'NETWORK_ERROR',
+        timestamp: Date.now(),
+        originalError: err
+      };
+
+      // Log to error tracking service
+      logErrorToService(apiError);
+
+      // Show user-friendly message
+      const userMessage = getUserFriendlyMessage(apiError.code);
+
+      // Re-throw with enhanced error
+      return throwError(() => ({
+        ...apiError,
+        userMessage
+      }));
+    })
+  );
+}
+
+function getUserFriendlyMessage(code: string): string {
+  const messages: Record<string, string> = {
+    '404': 'The requested resource was not found',
+    '500': 'Server error. Please try again later',
+    'NETWORK_ERROR': 'Unable to connect. Check your internet connection',
+    'TIMEOUT': 'Request timed out. Please try again'
+  };
+  return messages[code] || 'An unexpected error occurred';
+}
+
+fetchDataWithErrorTracking('/api/data').subscribe({
+  next: data => console.log('Data loaded:', data),
+  error: (err: APIError) => {
+    console.error('Error:', err.message);
+    showUserNotification(err.userMessage);
+  }
+});
+```
+
+## Practical Scenarios
+
+<Warning>
+  `catchError` must return an Observable. If you throw an error inside the selector, it will propagate as an error in the output Observable.
+</Warning>
+
+### Scenario 1: Multi-Tier Fallback Strategy
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, throwError, delay, retryWhen, scan } from 'rxjs';
+
+function fetchWithFallbacks<T>(primaryUrl: string, fallbackUrl: string): Observable<T> {
+  return ajax.getJSON<T>(primaryUrl).pipe(
+    catchError(primaryError => {
+      console.warn('Primary endpoint failed, trying fallback...');
+      
+      return ajax.getJSON<T>(fallbackUrl).pipe(
+        catchError(fallbackError => {
+          console.error('Both endpoints failed');
+          
+          // Try loading from IndexedDB as last resort
+          return loadFromIndexedDB<T>(primaryUrl).pipe(
+            catchError(dbError => {
+              console.error('All sources failed');
+              return throwError(() => ({
+                message: 'Unable to fetch data from any source',
+                primaryError,
+                fallbackError,
+                dbError
+              }));
+            })
+          );
+        })
+      );
+    })
+  );
+}
+
+fetchWithFallbacks<User>('/api/users/primary', '/api/users/fallback')
+  .subscribe({
+    next: user => console.log('User loaded:', user),
+    error: err => console.error('Complete failure:', err)
+  });
+```
+
+### Scenario 2: Per-Error-Type Handling
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, throwError, of, delay, retry } from 'rxjs';
+
+interface ApiResponse {
+  data: any;
+  cached?: boolean;
+  degraded?: boolean;
+}
+
+function smartFetch(url: string): Observable<ApiResponse> {
+  return ajax.getJSON(url).pipe(
+    map(data => ({ data })),
+    catchError(err => {
+      // Network errors - retry
+      if (err.status === 0 || err.status === 408) {
+        console.log('Network error, retrying...');
+        return smartFetch(url).pipe(
+          delay(1000),
+          retry(2)
+        );
+      }
+      
+      // Server errors - use cache
+      if (err.status >= 500) {
+        console.log('Server error, using cache...');
+        const cached = localStorage.getItem(url);
+        if (cached) {
+          return of({ data: JSON.parse(cached), cached: true });
+        }
+      }
+      
+      // Authentication errors - redirect
+      if (err.status === 401 || err.status === 403) {
+        console.log('Auth error, redirecting...');
+        redirectToLogin();
+        return throwError(() => new Error('Authentication required'));
+      }
+      
+      // Rate limiting - queue request
+      if (err.status === 429) {
+        console.log('Rate limited, retrying after delay...');
+        return smartFetch(url).pipe(delay(5000));
+      }
+      
+      // Default: propagate error
+      return throwError(() => err);
+    })
+  );
+}
+
+smartFetch('/api/data').subscribe({
+  next: response => {
+    if (response.cached) {
+      console.warn('Showing cached data');
+    }
+    displayData(response.data);
+  },
+  error: err => showError(err.message)
+});
+```
+
+### Scenario 3: Error Recovery with User Notification
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, of, tap, delay } from 'rxjs';
+
+interface SaveResult {
+  success: boolean;
+  data?: any;
+  error?: string;
+  recoveryAction?: string;
+}
+
+function saveDataWithRecovery(data: any): Observable<SaveResult> {
+  return ajax.post('/api/save', data).pipe(
+    map(response => ({
+      success: true,
+      data: response.response
+    })),
+    catchError(err => {
+      console.error('Save failed:', err);
+      
+      // Save to local storage as backup
+      const backupKey = `backup_${Date.now()}`;
+      localStorage.setItem(backupKey, JSON.stringify(data));
+      
+      // Notify user and setup background sync
+      return of({
+        success: false,
+        error: 'Unable to save to server',
+        recoveryAction: 'Saved locally. Will sync when connection is restored.'
+      }).pipe(
+        tap(result => {
+          showNotification(result.error!, result.recoveryAction!);
+          setupBackgroundSync(backupKey, data);
+        })
+      );
+    })
+  );
+}
+
+function setupBackgroundSync(backupKey: string, data: any) {
+  // Attempt to sync every 30 seconds
+  interval(30000).pipe(
+    switchMap(() => ajax.post('/api/save', data)),
+    take(1)
+  ).subscribe({
+    next: () => {
+      localStorage.removeItem(backupKey);
+      showNotification('Data synced successfully');
+    },
+    error: () => console.log('Sync attempt failed, will retry...')
+  });
+}
+
+saveDataWithRecovery({ title: 'Document', content: '...' })
+  .subscribe((result: SaveResult) => {
+    if (result.success) {
+      console.log('Saved successfully');
+    } else {
+      console.warn('Save failed, recovery initiated');
+    }
+  });
+```
+
+### Scenario 4: Conditional Error Swallowing
+
+```typescript
+import { ajax } from 'rxjs/ajax';
+import { catchError, EMPTY, throwError } from 'rxjs';
+
+interface AnalyticsEvent {
+  type: string;
+  data: any;
+  timestamp: number;
+}
+
+function trackEvent(event: AnalyticsEvent): Observable<void> {
+  return ajax.post('/api/analytics', event).pipe(
+    map(() => void 0),
+    catchError(err => {
+      // Analytics failures shouldn't break the app
+      console.warn('Analytics tracking failed:', err);
+      
+      // Store for later retry
+      queueFailedEvent(event);
+      
+      // Return empty to complete without error
+      return EMPTY;
+    })
+  );
+}
+
+function queueFailedEvent(event: AnalyticsEvent) {
+  const queue = JSON.parse(localStorage.getItem('analytics_queue') || '[]');
+  queue.push(event);
+  localStorage.setItem('analytics_queue', JSON.stringify(queue));
+}
+
+// Track user action
+trackEvent({
+  type: 'button_click',
+  data: { buttonId: 'submit' },
+  timestamp: Date.now()
+}).subscribe({
+  complete: () => console.log('Event tracked or queued')
+});
+// App continues working even if analytics fails
+```
+
+## Behavior Details
+
+### Error Propagation
+
+- If selector returns an Observable, that Observable is subscribed to
+- If selector throws an error, that error is propagated downstream
+- If the returned Observable errors, that error is propagated
+
+```typescript
+import { of, throwError, catchError } from 'rxjs';
+
+throwError(() => new Error('Original error')).pipe(
+  catchError(err => {
+    console.log('Caught:', err.message);
+    throw new Error('Transformed error');
+  })
+).subscribe({
+  error: err => console.log('Received:', err.message)
+});
+
+// Output:
+// Caught: Original error
+// Received: Transformed error
+```
+
+### Retry Pattern
+
+<Note>
+  Returning the `caught` parameter creates a retry loop. Be sure to add a completion condition (like `take`) to prevent infinite loops.
+</Note>
+
+```typescript
+import { interval, catchError, take, map } from 'rxjs';
+
+let attempts = 0;
+
+interval(1000).pipe(
+  map(() => {
+    attempts++;
+    if (attempts < 3) {
+      throw new Error(`Attempt ${attempts} failed`);
+    }
+    return `Success on attempt ${attempts}`;
+  }),
+  catchError((err, caught) => {
+    console.log(err.message, '- retrying...');
+    return caught;
+  }),
+  take(1)
+).subscribe(console.log);
+
+// Output:
+// Attempt 1 failed - retrying...
+// Attempt 2 failed - retrying...
+// Success on attempt 3
+```
+
+## Related Operators
+
+- [`retry`](/api/operators/retry) - Automatically retries a failed Observable
+- [`retryWhen`](/api/operators/retryWhen) - Retries with custom logic (deprecated, use retry with delay)
+- [`onErrorResumeNext`](/api/operators/onErrorResumeNext) - Continues with next Observable ignoring errors
+- [`throwError`](/api/operators/throwError) - Creates an Observable that errors
+- [`EMPTY`](/api/operators/EMPTY) - Creates an Observable that completes immediately

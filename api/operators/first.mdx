@@ -1,0 +1,365 @@
+---
+title: first
+description: Emits only the first value (or first matching a condition) from the source Observable
+---
+
+## Overview
+
+Emits only the first value (or the first value that meets some condition) emitted by the source Observable.
+
+<Note>
+`first` completes after emitting a single value. If no value is found and no default is provided, it emits an `EmptyError`. This is different from `take(1)` which completes without error when the source is empty.
+</Note>
+
+## Type Signature
+
+```typescript
+// Without predicate
+function first<T, D = T>(
+  predicate?: null,
+  defaultValue?: D
+): OperatorFunction<T, T | D>
+
+// With type guard
+function first<T, S extends T>(
+  predicate: (value: T, index: number, source: Observable<T>) => value is S,
+  defaultValue?: S
+): OperatorFunction<T, S>
+
+// With predicate
+function first<T, D = T>(
+  predicate: (value: T, index: number, source: Observable<T>) => boolean,
+  defaultValue?: D
+): OperatorFunction<T, T | D>
+```
+
+## Parameters
+
+<ParamField path="predicate" type="(value: T, index: number, source: Observable<T>) => boolean" optional>
+  An optional function called with each item to test for condition matching.
+  
+  If not provided, `first` emits the very first value from the source.
+  
+  If provided, `first` emits the first value that returns `true` from this function.
+</ParamField>
+
+<ParamField path="defaultValue" type="D" optional>
+  The default value emitted in case no valid value was found on the source.
+  
+  If provided, prevents `EmptyError` from being emitted.
+</ParamField>
+
+## Returns
+
+**`OperatorFunction<T, T | D>`** - A function that returns an Observable that emits the first item that matches the condition.
+
+## How It Works
+
+1. Subscribes to the source Observable
+2. For each emitted value:
+   - If no predicate: emits the first value immediately, then completes
+   - If predicate provided: tests the value
+     - If predicate returns `true`: emits the value and completes
+     - If predicate returns `false`: continues waiting
+3. If source completes without emitting a matching value:
+   - With `defaultValue`: emits default and completes
+   - Without `defaultValue`: emits `EmptyError`
+
+<Warning>
+`first()` throws `EmptyError` if the Observable completes without emitting a value and no default is provided. This is different from `take(1)` which just completes.
+</Warning>
+
+## Usage Examples
+
+### Basic Example: First Click
+
+```typescript
+import { fromEvent, first } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(first());
+
+result.subscribe(x => console.log(x));
+// Logs the first click event, then completes
+```
+
+### First Value Matching Condition
+
+```typescript
+import { fromEvent, first } from 'rxjs';
+
+const div = document.createElement('div');
+div.style.cssText = 'width: 200px; height: 200px; background: #09c;';
+document.body.appendChild(div);
+
+const clicks = fromEvent<MouseEvent>(document, 'click');
+const result = clicks.pipe(
+  first(ev => (ev.target as HTMLElement).tagName === 'DIV')
+);
+
+result.subscribe(x => console.log('First click on DIV:', x));
+```
+
+### With Default Value
+
+```typescript
+import { of, first, EMPTY } from 'rxjs';
+
+// Empty observable with default
+EMPTY.pipe(
+  first(null, 'default')
+).subscribe(console.log);
+// Output: 'default'
+
+// Observable with values
+of(1, 2, 3).pipe(
+  first(x => x > 5, 999)
+).subscribe(console.log);
+// Output: 999 (no value > 5)
+```
+
+<CodeGroup>
+```typescript User Authentication
+import { first, map } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface User {
+  id: string;
+  name: string;
+  authenticated: boolean;
+}
+
+const authStatus$ = ajax.getJSON<User>('/api/auth/status').pipe(
+  first(user => user.authenticated)
+);
+
+authStatus$.subscribe(
+  user => console.log('Authenticated user:', user.name),
+  err => console.log('Authentication required')
+);
+```
+
+```typescript Wait for Condition
+import { interval, first, map } from 'rxjs';
+
+interface ApiStatus {
+  ready: boolean;
+  progress: number;
+}
+
+const pollStatus$ = interval(1000).pipe(
+  map(() => checkApiStatus()),
+  first(status => status.ready)
+);
+
+pollStatus$.subscribe(status => {
+  console.log('API is ready!');
+  startApplication();
+});
+
+function checkApiStatus(): ApiStatus {
+  return { ready: Math.random() > 0.7, progress: 0 };
+}
+```
+
+```typescript First Valid Input
+import { fromEvent, first, map } from 'rxjs';
+
+const input = document.querySelector('#email') as HTMLInputElement;
+
+const firstValidEmail$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  first(email => email.includes('@') && email.length > 5)
+);
+
+firstValidEmail$.subscribe(email => {
+  console.log('First valid email entered:', email);
+  enableSubmitButton();
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `first` when:
+- You need **only the first value** from a stream
+- Implementing **"wait for condition"** logic
+- Converting multi-value streams to **single-value promises**
+- You want an **error if no value is emitted**
+- Getting the **first matching result** from a search
+
+### Don't use `first` when:
+- You want multiple values (use `take` or `filter`)
+- You want the **last** value (use `last` instead)
+- Empty stream is **valid** (use `take(1)` instead)
+- You need a **specific index** (use `elementAt` instead)
+
+## Common Patterns
+
+### Wait for Ready State
+
+```typescript
+import { interval, first, map, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface AppState {
+  initialized: boolean;
+  config: any;
+}
+
+const waitForReady$ = interval(500).pipe(
+  switchMap(() => ajax.getJSON<AppState>('/api/state')),
+  first(state => state.initialized)
+);
+
+waitForReady$.subscribe(state => {
+  console.log('App initialized with config:', state.config);
+  bootstrapApp(state.config);
+});
+```
+
+### First Non-Null Value
+
+```typescript
+import { of, first } from 'rxjs';
+
+const values$ = of(null, null, 'hello', 'world');
+
+values$.pipe(
+  first(value => value !== null)
+).subscribe(value => {
+  console.log('First non-null:', value);
+});
+// Output: First non-null: hello
+```
+
+### Convert to Promise
+
+```typescript
+import { fromEvent, first, map } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+
+// Wait for first click as a Promise
+const firstClick: Promise<MouseEvent> = clicks.pipe(
+  first()
+).toPromise();
+
+firstClick.then(event => {
+  console.log('Clicked at:', event.clientX, event.clientY);
+});
+
+// Or with async/await
+async function waitForClick() {
+  const event = await clicks.pipe(first()).toPromise();
+  console.log('Click received:', event);
+}
+```
+
+### First of Multiple Streams
+
+```typescript
+import { merge, first } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+// Try multiple APIs, use whichever responds first
+const primary$ = ajax.getJSON('/api/primary/data');
+const secondary$ = ajax.getJSON('/api/secondary/data');
+const fallback$ = ajax.getJSON('/api/fallback/data');
+
+const firstResponse$ = merge(primary$, secondary$, fallback$).pipe(
+  first()
+);
+
+firstResponse$.subscribe(data => {
+  console.log('Got data from fastest API:', data);
+});
+```
+
+<Tip>
+When converting Observables to Promises with `first()`, always provide a default value or handle the EmptyError to avoid unhandled promise rejections.
+</Tip>
+
+### Conditional Wait with Timeout
+
+```typescript
+import { interval, first, map, timeout } from 'rxjs';
+
+const checkReady$ = interval(100).pipe(
+  map(() => isSystemReady()),
+  first(ready => ready === true),
+  timeout(5000) // Fail if not ready within 5 seconds
+);
+
+checkReady$.subscribe(
+  () => console.log('System ready!'),
+  err => console.error('Timeout waiting for system')
+);
+
+function isSystemReady(): boolean {
+  return Math.random() > 0.95;
+}
+```
+
+## Error Handling
+
+```typescript
+import { EMPTY, first, of } from 'rxjs';
+
+// EmptyError when no value emitted
+EMPTY.pipe(first()).subscribe(
+  value => console.log('Value:', value),
+  err => console.error('Error:', err.name)
+);
+// Output: Error: EmptyError
+
+// No error with default value
+EMPTY.pipe(first(null, 'default')).subscribe(
+  value => console.log('Value:', value),
+  err => console.error('Error:', err)
+);
+// Output: Value: default
+
+// EmptyError when condition not met
+of(1, 2, 3).pipe(
+  first(x => x > 10)
+).subscribe(
+  value => console.log('Value:', value),
+  err => console.error('Error:', err.name)
+);
+// Output: Error: EmptyError
+```
+
+## Comparison: first vs take(1)
+
+```typescript
+import { EMPTY, first, take } from 'rxjs';
+
+// first() throws EmptyError
+EMPTY.pipe(first()).subscribe(
+  value => console.log('first:', value),
+  err => console.error('first error:', err.name),
+  () => console.log('first complete')
+);
+// Output: first error: EmptyError
+
+// take(1) completes normally
+EMPTY.pipe(take(1)).subscribe(
+  value => console.log('take:', value),
+  err => console.error('take error:', err),
+  () => console.log('take complete')
+);
+// Output: take complete
+```
+
+<Note>
+Use `first()` when you expect at least one value and want an error otherwise. Use `take(1)` when an empty stream is acceptable.
+</Note>
+
+## Related Operators
+
+- **[last](/api/operators/last)** - Emits the last value
+- **[take](/api/operators/take)** - Takes first N values (doesn't error on empty)
+- **[elementAt](/api/operators/elementAt)** - Emits value at specific index
+- **[find](/api/operators/find)** - Similar but designed for finding
+- **[filter](/api/operators/filter)** - Filters all matching values

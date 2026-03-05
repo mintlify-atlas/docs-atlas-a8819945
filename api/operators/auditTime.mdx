@@ -1,0 +1,223 @@
+---
+title: auditTime
+description: Rate-limiting operator that emits the most recent value after a specified time period
+---
+
+## Overview
+
+Ignores source values for `duration` milliseconds, then emits the most recent value from the source Observable, then repeats this process.
+
+<Note>
+`auditTime` is similar to `throttleTime`, but emits the **last** value from the silenced time window, instead of the first value.
+</Note>
+
+## Type Signature
+
+```typescript
+function auditTime<T>(
+  duration: number,
+  scheduler: SchedulerLike = asyncScheduler
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="duration" type="number" required>
+  Time to wait before emitting the most recent source value, measured in milliseconds or the time unit determined internally by the optional `scheduler`.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The SchedulerLike to use for managing the timers that handle the rate-limiting behavior.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that performs rate-limiting of emissions from the source Observable.
+
+## How It Works
+
+1. Initially, the internal timer is **disabled**
+2. When the first source value arrives, the timer is **enabled**
+3. After `duration` milliseconds, the timer is **disabled** and the **most recent** value is emitted
+4. While the timer is enabled, all source values are cached (only the latest is kept)
+5. This process repeats for each new value
+
+## Usage Examples
+
+### Basic Example: Limit Click Rate
+
+```typescript
+import { fromEvent, auditTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(auditTime(1000));
+
+result.subscribe(x => console.log(x));
+// Emits at most one click per second, always the last click
+```
+
+### Track Final Scroll Position
+
+```typescript
+import { fromEvent, auditTime, map } from 'rxjs';
+
+const scroll$ = fromEvent(window, 'scroll').pipe(
+  auditTime(200),
+  map(() => window.scrollY)
+);
+
+scroll$.subscribe(scrollPos => {
+  console.log('Final scroll position:', scrollPos);
+  localStorage.setItem('lastScrollPos', String(scrollPos));
+});
+```
+
+### Mouse Movement Sampling
+
+```typescript
+import { fromEvent, auditTime } from 'rxjs';
+
+const moves = fromEvent<MouseEvent>(document, 'mousemove');
+const sampledMoves = moves.pipe(
+  auditTime(100)
+);
+
+sampledMoves.subscribe(event => {
+  console.log('Mouse at:', event.clientX, event.clientY);
+});
+```
+
+<CodeGroup>
+```typescript Search Input
+import { fromEvent, auditTime, map, distinctUntilChanged, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const input = document.querySelector('#search') as HTMLInputElement;
+
+const search$ = fromEvent(input, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  auditTime(300),
+  distinctUntilChanged(),
+  switchMap(term => 
+    ajax.getJSON(`/api/search?q=${encodeURIComponent(term)}`)
+  )
+);
+
+search$.subscribe(results => {
+  console.log('Results:', results);
+});
+```
+
+```typescript Window Resize
+import { fromEvent, auditTime } from 'rxjs';
+
+const resize$ = fromEvent(window, 'resize').pipe(
+  auditTime(250)
+);
+
+resize$.subscribe(() => {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  console.log(`Resized to: ${width}x${height}`);
+  // Update layout, recalculate positions, etc.
+});
+```
+
+```typescript Button Spam Prevention
+import { fromEvent, auditTime, tap } from 'rxjs';
+
+const button = document.querySelector('#submit') as HTMLButtonElement;
+
+const clicks$ = fromEvent(button, 'click').pipe(
+  auditTime(2000),
+  tap(() => {
+    button.disabled = true;
+    button.textContent = 'Processing...';
+  })
+);
+
+clicks$.subscribe(() => {
+  // Submit form
+  console.log('Form submitted');
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `auditTime` when:
+- You want to **rate-limit** events with a **fixed time window**
+- You need the **most recent value** from each time window
+- Handling rapid UI events (scroll, resize, mousemove)
+- Implementing "save on typing" features
+- Preventing button spam
+
+### Don't use `auditTime` when:
+- You want the **first** value in each window (use `throttleTime` instead)
+- You need **dynamic duration** based on values (use `audit` instead)
+- You want to wait for **silence** (use `debounceTime` instead)
+- You need to process **every value** (use `buffer` or `bufferTime`)
+
+## Common Patterns
+
+### Auto-save Draft
+
+```typescript
+import { fromEvent, auditTime, map, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const textarea = document.querySelector('#draft') as HTMLTextAreaElement;
+
+const autoSave$ = fromEvent(textarea, 'input').pipe(
+  auditTime(2000), // Save every 2 seconds while typing
+  map(() => textarea.value),
+  switchMap(content => 
+    ajax.post('/api/drafts/save', { content })
+  )
+);
+
+autoSave$.subscribe(
+  () => console.log('Draft saved'),
+  err => console.error('Save failed:', err)
+);
+```
+
+### Throttle Analytics Events
+
+```typescript
+import { fromEvent, auditTime, map } from 'rxjs';
+
+const trackClicks$ = fromEvent(document, 'click').pipe(
+  auditTime(5000), // Max one event per 5 seconds
+  map(event => ({
+    target: (event.target as HTMLElement).tagName,
+    timestamp: Date.now()
+  }))
+);
+
+trackClicks$.subscribe(event => {
+  // Send to analytics
+  console.log('Analytics:', event);
+});
+```
+
+<Tip>
+Combine `auditTime` with `distinctUntilChanged` to avoid emitting duplicate values when the source stabilizes.
+</Tip>
+
+## Comparison with Similar Operators
+
+| Operator | Emits | Duration |
+|----------|-------|----------|
+| `auditTime` | **Last** value in window | **Fixed** time |
+| `throttleTime` | **First** value in window | **Fixed** time |
+| `audit` | **Last** value in window | **Dynamic** (from Observable) |
+| `debounceTime` | **Last** value after **silence** | **Fixed** time |
+
+## Related Operators
+
+- **[audit](/api/operators/audit)** - Same behavior but with dynamic duration
+- **[throttleTime](/api/operators/throttleTime)** - Emits the first value instead of the last
+- **[debounceTime](/api/operators/debounceTime)** - Waits for silence before emitting
+- **[sampleTime](/api/operators/sampleTime)** - Samples at fixed intervals
+- **[sample](/api/operators/sample)** - Samples when another Observable emits

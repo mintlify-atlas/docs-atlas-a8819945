@@ -1,0 +1,164 @@
+---
+title: 'zip'
+description: 'Combines multiple Observables by index, emitting arrays of values at corresponding positions'
+---
+
+# zip
+
+Combines multiple Observables to create an Observable whose values are calculated from the values, in order, of each of its input Observables.
+
+## Import
+
+```typescript
+import { zip } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+// Array form
+function zip<A extends readonly unknown[]>(
+  sources: [...ObservableInputTuple<A>]
+): Observable<A>;
+
+// Variadic form
+function zip<A extends readonly unknown[]>(
+  ...sources: [...ObservableInputTuple<A>]
+): Observable<A>;
+
+// With result selector
+function zip<A extends readonly unknown[], R>(
+  ...sourcesAndResultSelector: [...ObservableInputTuple<A>, (...values: A) => R]
+): Observable<R>;
+```
+
+## Parameters
+
+<ParamField path="sources" type="Array<ObservableInput>" required>
+  Multiple Observables to combine by index.
+</ParamField>
+
+<ParamField path="resultSelector" type="Function">
+  Optional function to transform the combined values.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T[]>">
+  An Observable that emits arrays of values taken from the same index of each input Observable.
+</ResponseField>
+
+## Description
+
+`zip` combines Observables by **pairing up** their emissions by index. It waits for all Observables to emit at each index before emitting the combined array.
+
+**Key characteristics:**
+- Emits when ALL Observables have emitted at the current index
+- Pairs values by their emission order (1st with 1st, 2nd with 2nd, etc.)
+- Completes when ANY Observable completes
+- Buffers values if Observables emit at different rates
+
+## Examples
+
+### Basic Zip
+
+```typescript
+import { zip, of } from 'rxjs';
+
+const age$ = of(27, 25, 29);
+const name$ = of('Foo', 'Bar', 'Beer');
+const isDev$ = of(true, true, false);
+
+zip(age$, name$, isDev$).subscribe(([age, name, isDev]) => {
+  console.log({ age, name, isDev });
+});
+
+// Output:
+// { age: 27, name: 'Foo', isDev: true }
+// { age: 25, name: 'Bar', isDev: true }
+// { age: 29, name: 'Beer', isDev: false }
+```
+
+### With Result Selector
+
+```typescript
+import { zip, of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const age$ = of(27, 25, 29);
+const name$ = of('Foo', 'Bar', 'Beer');
+
+zip(age$, name$).pipe(
+  map(([age, name]) => ({ age, name }))
+).subscribe(person => console.log(person));
+```
+
+### Different Emission Rates
+
+```typescript
+import { zip, interval, of } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const slow$ = interval(1000).pipe(take(3));  // 0, 1, 2 (one per second)
+const fast$ = of('a', 'b', 'c');             // emits immediately
+
+zip(slow$, fast$).subscribe(([slow, fast]) => {
+  console.log(slow, fast);
+});
+
+// Output (one per second):
+// 0 'a' (after 1s)
+// 1 'b' (after 2s)
+// 2 'c' (after 3s)
+```
+
+## Common Use Cases
+
+### Parallel Requests with Ordering
+
+```typescript
+import { zip } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const requests$ = zip(
+  ajax.getJSON('/api/user/1'),
+  ajax.getJSON('/api/user/2'),
+  ajax.getJSON('/api/user/3')
+);
+
+requests$.subscribe(([user1, user2, user3]) => {
+  console.log('Users:', user1, user2, user3);
+});
+```
+
+### Coordinate Multiple Streams
+
+```typescript
+import { zip, fromEvent } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+const keys$ = fromEvent(document, 'keypress');
+
+zip(clicks$, keys$).subscribe(([clickEvent, keyEvent]) => {
+  console.log('Click then key!');
+});
+```
+
+## Comparison with Other Operators
+
+<Note>
+  **zip vs combineLatest:** `zip` pairs by index, `combineLatest` uses latest values.
+  
+  **zip vs forkJoin:** `zip` emits multiple times, `forkJoin` emits once when all complete.
+</Note>
+
+## Related Operators
+
+- **[combineLatest](/api/creation/combineLatest)** - Combine latest values
+- **[forkJoin](/api/creation/forkJoin)** - Wait for all to complete
+- **[merge](/api/creation/merge)** - Merge all values
+- **withLatestFrom** - Sample latest from other Observables
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/zip)

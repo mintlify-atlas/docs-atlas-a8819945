@@ -1,0 +1,289 @@
+---
+title: elementAt
+description: Emits the single value at a specified index in the emission sequence
+---
+
+## Overview
+
+Emits the single value at the specified `index` in a sequence of emissions from the source Observable.
+
+<Note>
+Indexes are **zero-based**. The operator emits the i-th value, then completes. If the index is out of range and no default value is provided, it throws an `ArgumentOutOfRangeError`.
+</Note>
+
+## Type Signature
+
+```typescript
+function elementAt<T, D = T>(
+  index: number,
+  defaultValue?: D
+): OperatorFunction<T, T | D>
+```
+
+## Parameters
+
+<ParamField path="index" type="number" required>
+  The number `i` for the i-th source emission that has happened since the subscription, starting from the number `0`.
+  
+  Must be a non-negative integer. If negative, throws `ArgumentOutOfRangeError` immediately.
+</ParamField>
+
+<ParamField path="defaultValue" type="D" optional>
+  The default value returned for missing indices. If provided and the source completes before reaching the index, this value is emitted instead of throwing an error.
+</ParamField>
+
+## Returns
+
+**`OperatorFunction<T, T | D>`** - A function that returns an Observable that emits a single item at the specified index, or the default value, or an error.
+
+## How It Works
+
+1. Subscribes to the source and counts emissions (starting from 0)
+2. When count reaches the specified `index`, **emits** that value and **completes**
+3. If source completes before reaching the index:
+   - With `defaultValue`: emits the default value and completes
+   - Without `defaultValue`: emits an `ArgumentOutOfRangeError`
+
+<Warning>
+If `index < 0`, the operator throws `ArgumentOutOfRangeError` **immediately** without subscribing to the source.
+</Warning>
+
+## Usage Examples
+
+### Basic Example: Get Third Click
+
+```typescript
+import { fromEvent, elementAt } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(elementAt(2));
+
+result.subscribe(x => console.log(x));
+
+// Result:
+// click 1 = nothing
+// click 2 = nothing
+// click 3 = MouseEvent object logged to console, then completes
+```
+
+### With Default Value
+
+```typescript
+import { of, elementAt } from 'rxjs';
+
+const numbers = of(1, 2, 3);
+
+// Index exists
+numbers.pipe(elementAt(1)).subscribe(console.log);
+// Output: 2
+
+// Index out of range, with default
+numbers.pipe(elementAt(10, 'default')).subscribe(console.log);
+// Output: 'default'
+
+// Index out of range, without default
+numbers.pipe(elementAt(10)).subscribe(
+  value => console.log(value),
+  err => console.error(err.message)
+);
+// Output: ArgumentOutOfRangeError
+```
+
+### Get Specific Item from Array Stream
+
+```typescript
+import { from, elementAt } from 'rxjs';
+
+const fruits = ['apple', 'banana', 'cherry', 'date', 'elderberry'];
+const fruits$ = from(fruits);
+
+// Get the 3rd fruit (index 2)
+fruits$.pipe(elementAt(2)).subscribe(fruit => {
+  console.log('Selected fruit:', fruit);
+});
+// Output: Selected fruit: cherry
+```
+
+<CodeGroup>
+```typescript API Response
+import { interval, elementAt, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+// Poll an API and get the 5th response
+const polling$ = interval(1000).pipe(
+  switchMap(() => ajax.getJSON('/api/status')),
+  elementAt(4) // 5th response (0-indexed)
+);
+
+polling$.subscribe(
+  status => console.log('5th status check:', status),
+  err => console.error('Failed:', err)
+);
+```
+
+```typescript User Actions
+import { fromEvent, elementAt } from 'rxjs';
+
+const button = document.querySelector('#action') as HTMLButtonElement;
+const clicks$ = fromEvent(button, 'click');
+
+// Wait for 3rd click to unlock feature
+clicks$.pipe(elementAt(2)).subscribe(() => {
+  console.log('Feature unlocked!');
+  enableFeature();
+});
+```
+
+```typescript Stream Sampling
+import { interval, elementAt } from 'rxjs';
+
+// Get the 10th emission
+const timer$ = interval(100).pipe(
+  elementAt(9, -1) // 10th emission, or -1 if completed early
+);
+
+timer$.subscribe(value => {
+  console.log('10th tick or default:', value);
+});
+// Output after 900ms: 10th tick or default: 9
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `elementAt` when:
+- You need a **specific item** by position in the stream
+- Implementing **"nth occurrence"** logic
+- Sampling at a **specific point** in a sequence
+- Waiting for a **particular event count**
+
+### Don't use `elementAt` when:
+- You need **multiple items** (use `take`, `skip`, or `filter`)
+- You want items based on a **condition** (use `find` or `filter`)
+- You need the **first** item (use `first` instead)
+- You need the **last** item (use `last` instead)
+
+## Common Patterns
+
+### Skip and Take One
+
+```typescript
+import { interval, elementAt, skip, take } from 'rxjs';
+
+// These are equivalent:
+const withElementAt$ = interval(1000).pipe(elementAt(5));
+const withSkipTake$ = interval(1000).pipe(skip(5), take(1));
+
+// Both emit the 6th value (index 5)
+```
+
+### Conditional Feature Unlock
+
+```typescript
+import { fromEvent, elementAt, tap } from 'rxjs';
+
+const button = document.querySelector('#secret') as HTMLButtonElement;
+
+fromEvent(button, 'click').pipe(
+  elementAt(9, null), // 10th click or null
+  tap(event => {
+    if (event !== null) {
+      console.log('Secret unlocked!');
+      showSecretFeature();
+    }
+  })
+).subscribe();
+```
+
+### Pagination - Get Specific Page
+
+```typescript
+import { range, elementAt, map } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+function getPage(pageNumber: number) {
+  const pages$ = range(1, 100).pipe(
+    map(page => ajax.getJSON(`/api/items?page=${page}`))
+  );
+  
+  return pages$.pipe(
+    elementAt(pageNumber - 1) // Convert to 0-indexed
+  );
+}
+
+getPage(5).subscribe(page => {
+  console.log('Page 5 data:', page);
+});
+```
+
+<Tip>
+If you're using `elementAt` to get the first or last item, consider using the more semantic `first()` or `last()` operators instead.
+</Tip>
+
+## Error Handling
+
+```typescript
+import { of, elementAt } from 'rxjs';
+
+const short$ = of(1, 2, 3);
+
+// Without default: throws error
+short$.pipe(elementAt(10)).subscribe({
+  next: val => console.log('Value:', val),
+  error: err => console.error('Error:', err.name)
+});
+// Output: Error: ArgumentOutOfRangeError
+
+// With default: no error
+short$.pipe(elementAt(10, 'N/A')).subscribe({
+  next: val => console.log('Value:', val),
+  error: err => console.error('Error:', err)
+});
+// Output: Value: N/A
+```
+
+## Comparison with Other Operators
+
+```typescript
+import { of, elementAt, first, last, take, skip } from 'rxjs';
+
+const nums$ = of(1, 2, 3, 4, 5);
+
+// Get 3rd element (index 2)
+nums$.pipe(elementAt(2)).subscribe(console.log);
+// Output: 3
+
+// Get first element
+nums$.pipe(first()).subscribe(console.log);
+// Output: 1
+
+// Get last element  
+nums$.pipe(last()).subscribe(console.log);
+// Output: 5
+
+// Get 3rd element using skip + take
+nums$.pipe(skip(2), take(1)).subscribe(console.log);
+// Output: 3
+```
+
+## Performance Note
+
+```typescript
+import { range, elementAt } from 'rxjs';
+
+// elementAt still processes all values up to the index
+const million$ = range(1, 1000000).pipe(
+  elementAt(999999)
+);
+
+// The operator must count through 1 million emissions
+// Consider if there's a more efficient way to get your data
+```
+
+## Related Operators
+
+- **[first](/api/operators/first)** - Emits the first value (or first matching a predicate)
+- **[last](/api/operators/last)** - Emits the last value
+- **[take](/api/operators/take)** - Emits the first N values
+- **[skip](/api/operators/skip)** - Skips the first N values
+- **[single](/api/operators/single)** - Emits single value or error

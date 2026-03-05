@@ -1,0 +1,280 @@
+---
+title: Installation
+description: Install RxJS in your JavaScript or TypeScript project using npm, yarn, pnpm, or CDN
+---
+
+# Installation
+
+RxJS is available as the `rxjs` package on npm. This guide will walk you through different installation methods and show you how to import RxJS into your project.
+
+## Package Manager Installation
+
+<Info>
+**Current Version**: RxJS 8.0.0-alpha.14
+
+RxJS 8 is the latest version with improved performance, better modularity, and cleaner TypeScript types.
+</Info>
+
+<Steps>
+  <Step title="Choose your package manager">
+    Select your preferred package manager to install RxJS:
+
+    <CodeGroup>
+    ```bash npm
+    npm install rxjs
+    ```
+
+    ```bash yarn
+    yarn add rxjs
+    ```
+
+    ```bash pnpm
+    pnpm add rxjs
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Verify installation">
+    Check that RxJS was installed correctly by looking at your `package.json`:
+
+    ```json package.json
+    {
+      "dependencies": {
+        "rxjs": "^8.0.0-alpha.14"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Import RxJS in your code">
+    You're ready to start using RxJS! See the [import section](#importing-rxjs) below for details.
+  </Step>
+</Steps>
+
+## CDN Installation
+
+For quick prototyping or experiments, you can use RxJS directly from a CDN without any build setup.
+
+<CodeGroup>
+```html unpkg
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="module">
+    import { of, map } from 'https://unpkg.com/rxjs@8.0.0-alpha.14/dist/esm/index.js';
+    
+    of(1, 2, 3)
+      .pipe(map(x => x * 2))
+      .subscribe(x => console.log(x));
+  </script>
+</head>
+<body>
+  <h1>RxJS CDN Example</h1>
+</body>
+</html>
+```
+
+```html jsDelivr
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="module">
+    import { of, map } from 'https://cdn.jsdelivr.net/npm/rxjs@8.0.0-alpha.14/dist/esm/index.js';
+    
+    of(1, 2, 3)
+      .pipe(map(x => x * 2))
+      .subscribe(x => console.log(x));
+  </script>
+</head>
+<body>
+  <h1>RxJS CDN Example</h1>
+</body>
+</html>
+```
+</CodeGroup>
+
+<Note>
+CDN imports are great for learning and quick experiments, but for production applications, we recommend using a package manager and bundler for better performance and tree-shaking.
+</Note>
+
+## Importing RxJS
+
+RxJS uses ES modules and provides a clean import structure. Here's how to import different parts of the library:
+
+### Core Imports
+
+```typescript Main exports
+import { Observable, from, of } from 'rxjs';
+```
+
+### Operators
+
+Operators are available from the main `rxjs` package:
+
+```typescript Operators
+import { map, filter, reduce, scan, tap } from 'rxjs';
+```
+
+### Specialized Modules
+
+RxJS provides specialized entry points for different functionality:
+
+<CodeGroup>
+```typescript Ajax
+import { ajax } from 'rxjs/ajax';
+
+ajax('https://api.example.com/data').subscribe(response => {
+  console.log(response);
+});
+```
+
+```typescript Fetch
+import { fromFetch } from 'rxjs/fetch';
+
+fromFetch('https://api.example.com/data')
+  .subscribe(response => response.json())
+  .then(data => console.log(data));
+```
+
+```typescript WebSocket
+import { webSocket } from 'rxjs/webSocket';
+
+const socket$ = webSocket('ws://localhost:8080');
+socket$.subscribe(msg => console.log('message:', msg));
+```
+
+```typescript Testing
+import { TestScheduler } from 'rxjs/testing';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+```
+</CodeGroup>
+
+### Complete Import Example
+
+Here's a real-world example showing typical imports:
+
+```typescript app.ts
+import { Observable, of, from, interval, fromEvent } from 'rxjs';
+import { 
+  map, 
+  filter, 
+  take, 
+  debounceTime, 
+  distinctUntilChanged,
+  switchMap,
+  catchError 
+} from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+// Create an observable from DOM events
+const clicks$ = fromEvent(document, 'click');
+
+// Transform and filter values
+const numbers$ = of(1, 2, 3, 4, 5).pipe(
+  map(x => x * 2),
+  filter(x => x > 5)
+);
+
+// Make HTTP requests
+const data$ = ajax('https://api.example.com/data').pipe(
+  map(response => response.response),
+  catchError(error => of({ error: error.message }))
+);
+```
+
+## TypeScript Configuration
+
+RxJS 8 requires TypeScript 4.2 or higher for full type support.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2015",
+    "module": "commonjs",
+    "lib": ["ES2015", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node"
+  }
+}
+```
+
+<Tip>
+RxJS has excellent TypeScript support with full type inference for operators, making it easy to catch errors at compile time.
+</Tip>
+
+## Module Formats
+
+RxJS 8 provides multiple module formats to support different environments:
+
+<CardGroup cols={2}>
+  <Card title="ESM (Default)" icon="cube">
+    Modern ES modules for bundlers and modern browsers
+    ```typescript
+    ./dist/esm/index.js
+    ```
+  </Card>
+  <Card title="CommonJS" icon="box">
+    For Node.js and older build systems
+    ```typescript
+    ./dist/cjs/index.js
+    ```
+  </Card>
+</CardGroup>
+
+Most modern bundlers (Webpack, Rollup, Vite, esbuild) will automatically pick the correct format based on your project configuration.
+
+## Tree Shaking
+
+RxJS is fully tree-shakeable, meaning unused operators and functions will be removed from your final bundle.
+
+```typescript
+// Only imports what you use
+import { of, map, filter } from 'rxjs';
+
+// The unused operators (e.g., reduce, scan, etc.) 
+// won't be included in your bundle
+```
+
+<Note>
+RxJS 8 has `"sideEffects": false` in its package.json, ensuring optimal tree-shaking with all modern bundlers.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Module not found errors">
+    If you see errors like `Cannot find module 'rxjs'`, ensure:
+    1. You've run the install command (`npm install rxjs`)
+    2. Your `node_modules` folder exists
+    3. Try deleting `node_modules` and `package-lock.json` and reinstalling
+  </Accordion>
+  
+  <Accordion title="TypeScript type errors">
+    Ensure you're using TypeScript 4.2 or higher:
+    ```bash
+    npm install -D typescript@latest
+    ```
+  </Accordion>
+  
+  <Accordion title="Import path issues">
+    Always import from `rxjs` or specific entry points:
+    ```typescript
+    // ✅ Correct
+    import { map } from 'rxjs';
+    import { ajax } from 'rxjs/ajax';
+    
+    // ❌ Incorrect
+    import { map } from 'rxjs/operators';
+    import { Observable } from 'rxjs/Observable';
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Card title="Next: Build your first Observable" icon="code" href="/quickstart">
+  Now that RxJS is installed, let's create your first reactive application
+</Card>

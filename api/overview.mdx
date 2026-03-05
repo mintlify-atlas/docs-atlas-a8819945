@@ -1,0 +1,188 @@
+---
+title: 'API Reference Overview'
+description: 'Complete API reference for RxJS operators and functions'
+---
+
+# RxJS API Reference
+
+Welcome to the comprehensive RxJS API reference. This documentation covers all creation operators, transformation operators, filtering operators, and utility functions available in RxJS.
+
+## What is RxJS?
+
+RxJS (Reactive Extensions for JavaScript) is a library for reactive programming using Observables, making it easier to compose asynchronous or callback-based code. It provides powerful operators for transforming, filtering, and combining streams of data.
+
+## Core Concepts
+
+### Observable
+
+An Observable is a collection of future values or events. It's lazy - values are only computed when you subscribe to them.
+
+```typescript
+import { Observable } from 'rxjs';
+
+const observable = new Observable(subscriber => {
+  subscriber.next(1);
+  subscriber.next(2);
+  subscriber.complete();
+});
+```
+
+### Observer
+
+An Observer is a collection of callbacks that knows how to listen to values delivered by the Observable.
+
+```typescript
+const observer = {
+  next: x => console.log('Observer got a next value: ' + x),
+  error: err => console.error('Observer got an error: ' + err),
+  complete: () => console.log('Observer got a complete notification')
+};
+```
+
+### Subscription
+
+A Subscription represents the execution of an Observable and is primarily used for cancelling execution.
+
+```typescript
+const subscription = observable.subscribe(observer);
+// Later...
+subscription.unsubscribe();
+```
+
+## Creation Operators
+
+Creation operators are functions that create Observables from various sources. These are the building blocks for creating Observable streams.
+
+### Common Creation Operators
+
+<CardGroup cols={2}>
+  <Card title="of" icon="list" href="/api/creation/of">
+    Emits a sequence of values synchronously
+  </Card>
+  
+  <Card title="from" icon="stream" href="/api/creation/from">
+    Converts arrays, promises, or iterables to Observables
+  </Card>
+  
+  <Card title="interval" icon="clock" href="/api/creation/interval">
+    Emits sequential numbers at specified intervals
+  </Card>
+  
+  <Card title="timer" icon="timer" href="/api/creation/timer">
+    Emits after a delay, optionally repeating
+  </Card>
+  
+  <Card title="fromEvent" icon="hand-pointer" href="/api/creation/fromEvent">
+    Creates Observable from DOM or Node.js events
+  </Card>
+  
+  <Card title="ajax" icon="globe" href="/api/creation/ajax">
+    Creates Observable for AJAX requests
+  </Card>
+  
+  <Card title="combineLatest" icon="layer-group" href="/api/creation/combineLatest">
+    Combines latest values from multiple Observables
+  </Card>
+  
+  <Card title="merge" icon="code-merge" href="/api/creation/merge">
+    Merges multiple Observables into one
+  </Card>
+</CardGroup>
+
+### All Creation Operators
+
+- **[ajax](/api/creation/ajax)** - Create Observable for AJAX requests
+- **[bindCallback](/api/creation/bindCallback)** - Convert callback API to Observable
+- **[bindNodeCallback](/api/creation/bindNodeCallback)** - Convert Node.js callback to Observable
+- **[combineLatest](/api/creation/combineLatest)** - Combine latest values from Observables
+- **[concat](/api/creation/concat)** - Concatenate Observables sequentially
+- **[defer](/api/creation/defer)** - Create Observable lazily on subscription
+- **[forkJoin](/api/creation/forkJoin)** - Wait for all Observables to complete
+- **[from](/api/creation/from)** - Convert various sources to Observable
+- **[fromEvent](/api/creation/fromEvent)** - Create from DOM or event emitter
+- **[fromEventPattern](/api/creation/fromEventPattern)** - Create from arbitrary event API
+- **[generate](/api/creation/generate)** - Generate values using a loop
+- **[interval](/api/creation/interval)** - Emit numbers periodically
+- **[merge](/api/creation/merge)** - Merge multiple Observables concurrently
+- **[of](/api/creation/of)** - Emit values as a sequence
+- **[range](/api/creation/range)** - Emit a range of numbers
+- **[throwError](/api/creation/throwError)** - Create Observable that errors
+- **[timer](/api/creation/timer)** - Emit after delay
+- **[zip](/api/creation/zip)** - Combine Observables by index
+
+## Quick Start Example
+
+<CodeGroup>
+
+```typescript Basic Observable
+import { of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const source$ = of(1, 2, 3, 4, 5);
+const result$ = source$.pipe(
+  map(x => x * 2)
+);
+
+result$.subscribe(x => console.log(x));
+// Output: 2, 4, 6, 8, 10
+```
+
+```typescript HTTP Request
+import { ajax } from 'rxjs/ajax';
+import { map, catchError } from 'rxjs/operators';
+import { of } from 'rxjs';
+
+const users$ = ajax.getJSON('https://api.github.com/users');
+
+users$.pipe(
+  map(users => users.slice(0, 5)),
+  catchError(error => {
+    console.error('Error:', error);
+    return of([]);
+  })
+).subscribe(users => console.log(users));
+```
+
+```typescript Event Handling
+import { fromEvent } from 'rxjs';
+import { debounceTime, map } from 'rxjs/operators';
+
+const input = document.querySelector('input');
+const input$ = fromEvent(input, 'input');
+
+input$.pipe(
+  debounceTime(300),
+  map(event => event.target.value)
+).subscribe(value => {
+  console.log('Search:', value);
+});
+```
+
+</CodeGroup>
+
+## Type Safety
+
+RxJS is written in TypeScript and provides full type safety for all operators.
+
+```typescript
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// Type is Observable<number>
+const numbers$: Observable<number> = of(1, 2, 3);
+
+// Type is Observable<string>
+const strings$ = numbers$.pipe(
+  map(n => n.toString())
+);
+```
+
+## Next Steps
+
+<Card title="Explore Creation Operators" icon="plus" href="/api/creation/of">
+  Learn about all the ways to create Observables
+</Card>
+
+<Note>
+  This API reference is based on RxJS v7+. Some operators may have different signatures in earlier versions.
+</Note>

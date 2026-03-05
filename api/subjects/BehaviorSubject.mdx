@@ -1,0 +1,500 @@
+---
+title: 'BehaviorSubject'
+description: 'A Subject that stores the current value and emits it to new subscribers'
+---
+
+## Overview
+
+`BehaviorSubject` is a variant of Subject that requires an initial value and emits its current value to new subscribers immediately upon subscription. It always stores the latest value emitted and provides access to it via the `value` property.
+
+<Note>
+  **Key Feature**: BehaviorSubject requires an initial value and always has a "current value" that new subscribers receive immediately.
+</Note>
+
+## Class Signature
+
+```typescript
+class BehaviorSubject<T> extends Subject<T> {
+  constructor(initialValue: T);
+  
+  get value(): T;
+  getValue(): T;
+  next(value: T): void;
+}
+```
+
+## Constructor
+
+```typescript
+const subject = new BehaviorSubject<T>(initialValue: T);
+```
+
+<ParamField path="initialValue" type="T" required>
+  The initial value that will be emitted to the first subscriber and returned by `getValue()` before any other values are emitted.
+</ParamField>
+
+## Properties
+
+<ParamField path="value" type="T" readonly>
+  Get the current value. Throws an error if the Subject has errored.
+</ParamField>
+
+## Methods
+
+<ParamField path="getValue" type="() => T">
+  Returns the current value. Throws the error if the Subject has errored.
+</ParamField>
+
+<ParamField path="next" type="(value: T) => void">
+  Emit a new value and update the current value.
+</ParamField>
+
+## Usage Examples
+
+### Basic Usage
+
+Immediate emission to new subscribers:
+
+<CodeGroup>
+```typescript Current value
+import { BehaviorSubject } from 'rxjs';
+
+const subject = new BehaviorSubject<number>(0);
+
+console.log('Initial value:', subject.value); // 0
+
+subject.subscribe({
+  next: (v) => console.log(`Observer A: ${v}`)
+});
+// Observer A: 0 (receives initial value immediately)
+
+subject.next(1);
+subject.next(2);
+
+// Late subscriber gets current value
+subject.subscribe({
+  next: (v) => console.log(`Observer B: ${v}`)
+});
+// Observer B: 2 (receives latest value immediately)
+
+subject.next(3);
+
+// Output:
+// Initial value: 0
+// Observer A: 0
+// Observer A: 1
+// Observer A: 2
+// Observer B: 2
+// Observer A: 3
+// Observer B: 3
+```
+
+```typescript getValue vs value
+import { BehaviorSubject } from 'rxjs';
+
+const subject = new BehaviorSubject<string>('initial');
+
+subject.next('updated');
+
+console.log(subject.value);    // 'updated'
+console.log(subject.getValue()); // 'updated'
+
+subject.next('final');
+console.log(subject.value);    // 'final'
+```
+</CodeGroup>
+
+### Application State
+
+Manage application state with BehaviorSubject:
+
+```typescript
+import { BehaviorSubject } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+interface AppState {
+  user: { name: string; email: string } | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
+const initialState: AppState = {
+  user: null,
+  isLoading: false,
+  error: null
+};
+
+class StateManager {
+  private state = new BehaviorSubject<AppState>(initialState);
+  
+  state$ = this.state.asObservable();
+  user$ = this.state$.pipe(map(state => state.user));
+  isLoading$ = this.state$.pipe(map(state => state.isLoading));
+  
+  setUser(user: AppState['user']): void {
+    this.state.next({
+      ...this.state.value,
+      user
+    });
+  }
+  
+  setLoading(isLoading: boolean): void {
+    this.state.next({
+      ...this.state.value,
+      isLoading
+    });
+  }
+  
+  setError(error: string | null): void {
+    this.state.next({
+      ...this.state.value,
+      error
+    });
+  }
+}
+
+const stateManager = new StateManager();
+
+// Components can subscribe and get current state immediately
+stateManager.user$.subscribe(user => {
+  if (user) {
+    console.log('Logged in as:', user.name);
+  } else {
+    console.log('Not logged in');
+  }
+});
+
+stateManager.setUser({ name: 'Alice', email: 'alice@example.com' });
+```
+
+### Theme Manager
+
+Manage application theme:
+
+```typescript
+import { BehaviorSubject } from 'rxjs';
+
+type Theme = 'light' | 'dark';
+
+class ThemeManager {
+  private theme = new BehaviorSubject<Theme>('light');
+  
+  theme$ = this.theme.asObservable();
+  
+  getCurrentTheme(): Theme {
+    return this.theme.value;
+  }
+  
+  setTheme(theme: Theme): void {
+    this.theme.next(theme);
+    document.body.className = theme;
+  }
+  
+  toggleTheme(): void {
+    const newTheme = this.theme.value === 'light' ? 'dark' : 'light';
+    this.setTheme(newTheme);
+  }
+}
+
+const themeManager = new ThemeManager();
+
+// UI components subscribe and get current theme immediately
+themeManager.theme$.subscribe(theme => {
+  console.log('Current theme:', theme);
+  applyThemeStyles(theme);
+});
+
+// Toggle theme
+themeManager.toggleTheme();
+```
+
+### Form Field State
+
+Track form input values:
+
+```typescript
+import { BehaviorSubject } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+
+class FormField {
+  private valueSubject = new BehaviorSubject<string>('');
+  
+  value$ = this.valueSubject.asObservable();
+  debouncedValue$ = this.value$.pipe(
+    debounceTime(300),
+    distinctUntilChanged()
+  );
+  
+  setValue(value: string): void {
+    this.valueSubject.next(value);
+  }
+  
+  getValue(): string {
+    return this.valueSubject.value;
+  }
+  
+  reset(): void {
+    this.valueSubject.next('');
+  }
+}
+
+const searchField = new FormField();
+
+// Subscribe to debounced values for API calls
+searchField.debouncedValue$.subscribe(query => {
+  if (query.length > 2) {
+    searchAPI(query);
+  }
+});
+
+// Subscribe to immediate values for UI updates
+searchField.value$.subscribe(value => {
+  updateCharacterCount(value.length);
+});
+
+// Simulate user typing
+searchField.setValue('h');
+searchField.setValue('he');
+searchField.setValue('hel');
+searchField.setValue('hello');
+```
+
+### Loading State
+
+Manage loading indicators:
+
+```typescript
+import { BehaviorSubject, finalize } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+class DataService {
+  private loading = new BehaviorSubject<boolean>(false);
+  
+  isLoading$ = this.loading.asObservable();
+  
+  fetchData(url: string) {
+    this.loading.next(true);
+    
+    return ajax.getJSON(url).pipe(
+      finalize(() => this.loading.next(false))
+    );
+  }
+}
+
+const service = new DataService();
+
+// UI subscribes to loading state
+service.isLoading$.subscribe(isLoading => {
+  if (isLoading) {
+    showSpinner();
+  } else {
+    hideSpinner();
+  }
+});
+
+// Fetch data
+service.fetchData('/api/data').subscribe(data => {
+  console.log('Data loaded:', data);
+});
+```
+
+### Shopping Cart
+
+Manage shopping cart state:
+
+```typescript
+import { BehaviorSubject } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+interface CartItem {
+  id: number;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+class ShoppingCart {
+  private items = new BehaviorSubject<CartItem[]>([]);
+  
+  items$ = this.items.asObservable();
+  
+  itemCount$ = this.items$.pipe(
+    map(items => items.reduce((sum, item) => sum + item.quantity, 0))
+  );
+  
+  total$ = this.items$.pipe(
+    map(items => items.reduce((sum, item) => sum + (item.price * item.quantity), 0))
+  );
+  
+  addItem(item: Omit<CartItem, 'quantity'>): void {
+    const currentItems = this.items.value;
+    const existingItem = currentItems.find(i => i.id === item.id);
+    
+    if (existingItem) {
+      this.items.next(
+        currentItems.map(i => 
+          i.id === item.id 
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        )
+      );
+    } else {
+      this.items.next([...currentItems, { ...item, quantity: 1 }]);
+    }
+  }
+  
+  removeItem(id: number): void {
+    this.items.next(
+      this.items.value.filter(item => item.id !== id)
+    );
+  }
+  
+  clear(): void {
+    this.items.next([]);
+  }
+}
+
+const cart = new ShoppingCart();
+
+cart.itemCount$.subscribe(count => {
+  updateCartBadge(count);
+});
+
+cart.total$.subscribe(total => {
+  updateTotalDisplay(total);
+});
+
+cart.addItem({ id: 1, name: 'Widget', price: 10 });
+cart.addItem({ id: 2, name: 'Gadget', price: 20 });
+cart.addItem({ id: 1, name: 'Widget', price: 10 }); // Increments quantity
+```
+
+## Key Differences from Subject
+
+<Tip>
+  **Subject vs BehaviorSubject:**
+  
+  - Subject: No initial value, late subscribers miss past emissions
+  - BehaviorSubject: Requires initial value, late subscribers get current value
+</Tip>
+
+```typescript
+import { Subject, BehaviorSubject } from 'rxjs';
+
+// Regular Subject
+const subject = new Subject<number>();
+subject.next(1);
+subject.subscribe(x => console.log('Subject:', x));
+subject.next(2);
+// Output: Subject: 2 (missed 1)
+
+// BehaviorSubject
+const behaviorSubject = new BehaviorSubject<number>(0);
+behaviorSubject.next(1);
+behaviorSubject.subscribe(x => console.log('BehaviorSubject:', x));
+behaviorSubject.next(2);
+// Output:
+// BehaviorSubject: 1 (current value)
+// BehaviorSubject: 2
+```
+
+## Error Handling
+
+<Warning>
+  Once a BehaviorSubject errors, `getValue()` and the `value` getter will throw that error instead of returning a value.
+</Warning>
+
+```typescript
+import { BehaviorSubject } from 'rxjs';
+
+const subject = new BehaviorSubject<number>(0);
+
+subject.next(1);
+console.log(subject.value); // 1
+
+subject.error(new Error('Something went wrong'));
+
+try {
+  console.log(subject.value); // Throws error
+} catch (err) {
+  console.error('Error accessing value:', err.message);
+}
+```
+
+## Common Patterns
+
+### Derived State
+
+```typescript
+import { BehaviorSubject, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const firstName = new BehaviorSubject<string>('John');
+const lastName = new BehaviorSubject<string>('Doe');
+
+const fullName$ = combineLatest([firstName, lastName]).pipe(
+  map(([first, last]) => `${first} ${last}`)
+);
+
+fullName$.subscribe(name => console.log('Full name:', name));
+// Full name: John Doe
+
+firstName.next('Jane');
+// Full name: Jane Doe
+```
+
+### Snapshot Values
+
+```typescript
+import { BehaviorSubject } from 'rxjs';
+
+const counter = new BehaviorSubject<number>(0);
+
+function increment(): void {
+  counter.next(counter.value + 1);
+}
+
+function decrement(): void {
+  counter.next(counter.value - 1);
+}
+
+increment(); // 1
+increment(); // 2
+decrement(); // 1
+
+console.log('Current count:', counter.value); // 1
+```
+
+## When to Use BehaviorSubject
+
+1. **Current State**: Need to access current value synchronously
+2. **Initial Value**: Want new subscribers to receive latest value
+3. **State Management**: Managing application or component state
+4. **Configuration**: Storing current settings/preferences
+5. **Form State**: Tracking form field values
+6. **UI State**: Managing UI state (theme, language, etc.)
+
+## Performance Considerations
+
+- Slightly more memory than Subject (stores current value)
+- `getValue()` is synchronous - no subscription needed
+- New subscribers immediately receive current value
+- Good for state that changes infrequently
+
+## Related Classes
+
+- [Subject](/api/subjects/Subject) - Basic multicast without current value
+- [ReplaySubject](/api/subjects/ReplaySubject) - Replays multiple past values
+- [AsyncSubject](/api/subjects/AsyncSubject) - Emits only final value
+
+## Related Operators
+
+- [shareReplay](/api/operators/shareReplay) - Share with replay behavior
+- [startWith](/api/operators/startWith) - Add initial value to Observable
+- [distinctUntilChanged](/api/operators/distinctUntilChanged) - Filter duplicate values
+
+## See Also
+
+- [RxJS BehaviorSubject documentation](https://rxjs.dev/api/index/class/BehaviorSubject)
+- [State Management Guide](/guides/state-management)
+- [Subject Guide](/guides/subjects)

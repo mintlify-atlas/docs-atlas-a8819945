@@ -1,0 +1,337 @@
+---
+title: map
+description: Applies a projection function to each value emitted by the source Observable
+---
+
+## Overview
+
+Applies a given projection function to each value emitted by the source Observable and emits the resulting values. Similar to `Array.prototype.map()`, it transforms each source value through a function.
+
+<Tip>
+  `map` is one of the most fundamental and commonly used RxJS operators. Master it first as it appears in nearly every Observable pipeline.
+</Tip>
+
+## Type Signature
+
+```typescript
+function map<T, R>(
+  project: (value: T, index: number) => R
+): OperatorFunction<T, R>
+```
+
+## Parameters
+
+<ParamField path="project" type="(value: T, index: number) => R" required>
+  A function to apply to each value emitted by the source Observable. The function receives:
+  - `value`: The emitted value from the source
+  - `index`: The zero-based index of the emission (starts at 0, increments with each emission)
+  
+  Must return the transformed value of type R.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, R>">
+  A function that returns an Observable that emits the values from the source Observable transformed by the given `project` function.
+</ParamField>
+
+## Usage Examples
+
+### Basic Example: Transform Mouse Clicks
+
+<CodeGroup>
+```typescript Extract Property
+import { fromEvent, map } from 'rxjs';
+
+const clicks = fromEvent<PointerEvent>(document, 'click');
+const positions = clicks.pipe(
+  map(ev => ev.clientX)
+);
+
+positions.subscribe(x => console.log(x));
+// Output: 345, 128, 892 (X coordinates of clicks)
+```
+
+```typescript Create Object
+import { fromEvent, map } from 'rxjs';
+
+const clicks = fromEvent<MouseEvent>(document, 'click');
+const clickData = clicks.pipe(
+  map(ev => ({
+    x: ev.clientX,
+    y: ev.clientY,
+    timestamp: Date.now()
+  }))
+);
+
+clickData.subscribe(data => console.log(data));
+// { x: 345, y: 128, timestamp: 1234567890 }
+```
+</CodeGroup>
+
+### Using the Index Parameter
+
+```typescript
+import { of, map } from 'rxjs';
+
+const letters = of('a', 'b', 'c', 'd');
+const indexed = letters.pipe(
+  map((value, index) => `${index}: ${value}`)
+);
+
+indexed.subscribe(x => console.log(x));
+// Output:
+// 0: a
+// 1: b
+// 2: c
+// 3: d
+```
+
+### Mathematical Transformations
+
+```typescript
+import { interval, map, take } from 'rxjs';
+
+const numbers = interval(1000).pipe(take(5));
+
+// Square each number
+const squared = numbers.pipe(
+  map(n => n * n)
+);
+
+squared.subscribe(x => console.log(x));
+// Output: 0, 1, 4, 9, 16
+
+// Multiple transformations
+const complex = numbers.pipe(
+  map(n => n * 2),        // Double
+  map(n => n + 1),        // Add one
+  map(n => Math.pow(n, 2)) // Square
+);
+
+complex.subscribe(x => console.log(x));
+// Output: 1, 9, 25, 49, 81
+```
+
+### Working with Objects
+
+```typescript
+import { from, map } from 'rxjs';
+
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+const users: User[] = [
+  { id: 1, firstName: 'John', lastName: 'Doe', email: 'john@example.com' },
+  { id: 2, firstName: 'Jane', lastName: 'Smith', email: 'jane@example.com' }
+];
+
+from(users).pipe(
+  map(user => ({
+    id: user.id,
+    fullName: `${user.firstName} ${user.lastName}`,
+    email: user.email
+  }))
+).subscribe(transformed => console.log(transformed));
+
+// Output:
+// { id: 1, fullName: 'John Doe', email: 'john@example.com' }
+// { id: 2, fullName: 'Jane Smith', email: 'jane@example.com' }
+```
+
+## Marble Diagram
+
+```
+Source:  --1---2---3---4---|
+map(x => x * 10)
+Result:  --10--20--30--40--|
+```
+
+## Common Use Cases
+
+1. **Data Extraction**: Pull specific properties from complex objects
+2. **Data Transformation**: Convert data from one format to another
+3. **Calculations**: Perform mathematical operations on values
+4. **Formatting**: Format strings, dates, numbers for display
+5. **Type Conversion**: Convert between data types
+6. **Enrichment**: Add computed properties to objects
+
+<Info>
+  Unlike `Array.prototype.map()`, RxJS `map` works with asynchronous sequences and can transform infinite streams.
+</Info>
+
+## Advanced Example: Data Processing Pipeline
+
+```typescript
+import { interval, map, filter } from 'rxjs';
+
+interface RawSensorData {
+  temperature: number;
+  humidity: number;
+  pressure: number;
+  timestamp: number;
+}
+
+interface ProcessedData {
+  tempCelsius: number;
+  tempFahrenheit: number;
+  humidity: number;
+  pressureInHg: number;
+  timestamp: string;
+  status: 'normal' | 'warning' | 'critical';
+}
+
+const sensorStream = interval(1000).pipe(
+  map((): RawSensorData => ({
+    temperature: 20 + Math.random() * 10,
+    humidity: 40 + Math.random() * 30,
+    pressure: 1000 + Math.random() * 50,
+    timestamp: Date.now()
+  }))
+);
+
+const processedStream = sensorStream.pipe(
+  map((raw): ProcessedData => {
+    const tempC = raw.temperature;
+    const tempF = (tempC * 9/5) + 32;
+    
+    let status: 'normal' | 'warning' | 'critical' = 'normal';
+    if (tempC > 28 || raw.humidity > 80) status = 'warning';
+    if (tempC > 30 || raw.humidity > 90) status = 'critical';
+    
+    return {
+      tempCelsius: Math.round(tempC * 100) / 100,
+      tempFahrenheit: Math.round(tempF * 100) / 100,
+      humidity: Math.round(raw.humidity),
+      pressureInHg: Math.round((raw.pressure * 0.02953) * 100) / 100,
+      timestamp: new Date(raw.timestamp).toISOString(),
+      status
+    };
+  }),
+  filter(data => data.status !== 'normal')
+);
+
+processedStream.subscribe(data => {
+  console.log('Alert:', data);
+});
+```
+
+### Chaining Maps
+
+```typescript
+import { of, map } from 'rxjs';
+
+of('  hello world  ').pipe(
+  map(str => str.trim()),
+  map(str => str.toUpperCase()),
+  map(str => str.split(' ')),
+  map(words => words.join('-'))
+).subscribe(result => {
+  console.log(result); // "HELLO-WORLD"
+});
+```
+
+### API Response Transformation
+
+```typescript
+import { from, map } from 'rxjs';
+
+interface ApiResponse {
+  data: {
+    users: Array<{
+      user_id: number;
+      user_name: string;
+      user_email: string;
+      created_at: string;
+    }>;
+  };
+  meta: {
+    total: number;
+    page: number;
+  };
+}
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: Date;
+}
+
+function fetchUsers() {
+  return from(
+    fetch('/api/users').then(res => res.json())
+  ).pipe(
+    map((response: ApiResponse) => ({
+      users: response.data.users.map(u => ({
+        id: u.user_id,
+        name: u.user_name,
+        email: u.user_email,
+        createdAt: new Date(u.created_at)
+      })),
+      pagination: response.meta
+    }))
+  );
+}
+
+fetchUsers().subscribe(result => {
+  console.log('Transformed users:', result.users);
+});
+```
+
+## Error Handling
+
+<Warning>
+  If the `project` function throws an error, the error is propagated to the subscriber and the Observable terminates.
+</Warning>
+
+```typescript
+import { of, map, catchError } from 'rxjs';
+
+of(1, 2, 0, 4).pipe(
+  map(n => {
+    if (n === 0) throw new Error('Division by zero!');
+    return 100 / n;
+  }),
+  catchError(err => {
+    console.error('Caught:', err.message);
+    return of(-1);
+  })
+).subscribe(x => console.log(x));
+// Output: 100, 50, -1 (error caught)
+```
+
+## Performance Tips
+
+<Tip>
+  Keep the `project` function pure (no side effects) and fast. Heavy computations in `map` can block the event loop. Consider using `observeOn` with a scheduler for CPU-intensive transformations.
+</Tip>
+
+```typescript
+// Good: Pure function
+map(x => x * 2)
+
+// Avoid: Side effects
+map(x => {
+  console.log(x); // Side effect
+  updateGlobalState(x); // Side effect
+  return x * 2;
+})
+
+// Better: Use tap for side effects
+tap(x => console.log(x)),
+map(x => x * 2)
+```
+
+## Related Operators
+
+- **[pluck](/api/operators/pluck)** - Extract a nested property (shorthand for simple map)
+- **[mapTo](/api/operators/mapto)** - Map to a constant value
+- **[mergeMap](/api/operators/mergemap)** - Map to Observable and flatten
+- **[switchMap](/api/operators/switchmap)** - Map to Observable and switch
+- **[concatMap](/api/operators/concatmap)** - Map to Observable and concat
+- **[scan](/api/operators/scan)** - Like map but with accumulation

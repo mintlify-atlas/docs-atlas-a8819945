@@ -1,0 +1,367 @@
+---
+title: last
+description: Emits only the last value (or last matching a condition) from the source Observable
+---
+
+## Overview
+
+Returns an Observable that emits only the last item emitted by the source Observable. It optionally takes a predicate function as a parameter, in which case, rather than emitting the last item from the source Observable, the resulting Observable will emit the last item from the source Observable that satisfies the predicate.
+
+<Note>
+`last` waits for the source to **complete** before emitting. If no value is found and no default is provided, it emits an `EmptyError`.
+</Note>
+
+## Type Signature
+
+```typescript
+// Without predicate
+function last<T, D = T>(
+  predicate?: null,
+  defaultValue?: D
+): OperatorFunction<T, T | D>
+
+// With type guard
+function last<T, S extends T>(
+  predicate: (value: T, index: number, source: Observable<T>) => value is S,
+  defaultValue?: S
+): OperatorFunction<T, S>
+
+// With predicate
+function last<T, D = T>(
+  predicate: (value: T, index: number, source: Observable<T>) => boolean,
+  defaultValue?: D
+): OperatorFunction<T, T | D>
+```
+
+## Parameters
+
+<ParamField path="predicate" type="(value: T, index: number, source: Observable<T>) => boolean" optional>
+  The condition any source emitted item has to satisfy.
+  
+  If not provided, `last` emits the very last value from the source.
+  
+  If provided, `last` emits the last value that returns `true` from this function.
+</ParamField>
+
+<ParamField path="defaultValue" type="D" optional>
+  An optional default value to provide if last predicate isn't met or no values were emitted.
+  
+  Prevents `EmptyError` from being thrown.
+</ParamField>
+
+## Returns
+
+**`OperatorFunction<T, T | D>`** - A function that returns an Observable that emits only the last item satisfying the given condition from the source, or an EmptyError if no such items are emitted.
+
+## How It Works
+
+1. Subscribes to the source and **buffers** all values (or all matching values)
+2. Waits for the source to **complete**
+3. On completion:
+   - If a matching value was found: emits the **last** one and completes
+   - If no matching value:
+     - With `defaultValue`: emits default and completes
+     - Without `defaultValue`: emits `EmptyError`
+
+<Warning>
+The source must complete for `last` to emit. If the source never completes, `last` will never emit a value.
+</Warning>
+
+## Usage Examples
+
+### Basic Example: Last Alphabet
+
+```typescript
+import { from, last } from 'rxjs';
+
+const source = from(['x', 'y', 'z']);
+const result = source.pipe(last());
+
+result.subscribe(value => console.log(`Last alphabet: ${value}`));
+
+// Output:
+// Last alphabet: z
+```
+
+### Last Value Matching Condition
+
+```typescript
+import { from, last } from 'rxjs';
+
+const numbers = from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+const lastEven = numbers.pipe(
+  last(n => n % 2 === 0)
+);
+
+lastEven.subscribe(value => console.log('Last even number:', value));
+// Output: Last even number: 10
+```
+
+### With Default Value
+
+```typescript
+import { from, last } from 'rxjs';
+
+const source = from(['x', 'y', 'z']);
+const result = source.pipe(
+  last(char => char === 'a', 'not found')
+);
+
+result.subscribe(value => console.log(`'a' is ${value}.`));
+// Output: 'a' is not found.
+```
+
+<CodeGroup>
+```typescript Last API Response
+import { interval, last, take, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+// Poll API 5 times, get the last response
+const polling$ = interval(1000).pipe(
+  take(5),
+  switchMap(() => ajax.getJSON('/api/status')),
+  last()
+);
+
+polling$.subscribe(status => {
+  console.log('Final status:', status);
+});
+```
+
+```typescript Last Valid Value
+import { from, last } from 'rxjs';
+
+interface Product {
+  id: number;
+  name: string;
+  inStock: boolean;
+}
+
+const products$ = from<Product>([
+  { id: 1, name: 'Widget', inStock: true },
+  { id: 2, name: 'Gadget', inStock: false },
+  { id: 3, name: 'Doohickey', inStock: true }
+]);
+
+const lastInStock$ = products$.pipe(
+  last(product => product.inStock)
+);
+
+lastInStock$.subscribe(product => {
+  console.log('Last in-stock product:', product.name);
+});
+// Output: Last in-stock product: Doohickey
+```
+
+```typescript User Actions
+import { fromEvent, last, take, map } from 'rxjs';
+
+const button = document.querySelector('#submit') as HTMLButtonElement;
+
+const clicks$ = fromEvent(button, 'click').pipe(
+  take(5), // Only monitor first 5 clicks
+  map((_, index) => index + 1),
+  last()
+);
+
+clicks$.subscribe(count => {
+  console.log(`Clicked ${count} times total`);
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `last` when:
+- You need **only the last value** from a **finite** stream
+- Finding the **final state** after a series of changes
+- Getting the **last matching item** from a sequence
+- Waiting for a stream to **complete** and get its final value
+
+### Don't use `last` when:
+- The stream is **infinite** or never completes
+- You want the **first** value (use `first` instead)
+- You need **multiple values** (use `filter`, `takeLast`)
+- You want a **specific index** (use `elementAt` instead)
+
+## Common Patterns
+
+### Last Value from Finite Stream
+
+```typescript
+import { range, last } from 'rxjs';
+
+const numbers$ = range(1, 100);
+const lastNumber$ = numbers$.pipe(last());
+
+lastNumber$.subscribe(value => {
+  console.log('Last number:', value);
+});
+// Output: Last number: 100
+```
+
+### Last Before Timeout
+
+```typescript
+import { interval, last, take, timeout } from 'rxjs';
+
+const values$ = interval(100).pipe(
+  take(10),
+  timeout(550), // May not complete all 10
+  last(null, -1) // Default to -1 if timeout
+);
+
+values$.subscribe(
+  value => console.log('Last value:', value),
+  err => console.error('Timeout')
+);
+```
+
+### Find Last Match
+
+```typescript
+import { from, last } from 'rxjs';
+
+interface LogEntry {
+  timestamp: number;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+const logs$ = from<LogEntry>([
+  { timestamp: 1, level: 'info', message: 'Started' },
+  { timestamp: 2, level: 'error', message: 'Failed' },
+  { timestamp: 3, level: 'info', message: 'Retrying' },
+  { timestamp: 4, level: 'error', message: 'Failed again' }
+]);
+
+const lastError$ = logs$.pipe(
+  last(entry => entry.level === 'error')
+);
+
+lastError$.subscribe(entry => {
+  console.log('Last error:', entry.message);
+});
+// Output: Last error: Failed again
+```
+
+### Last Non-Null Value
+
+```typescript
+import { of, last } from 'rxjs';
+
+const values$ = of(1, 2, null, 3, null);
+
+const lastNonNull$ = values$.pipe(
+  last(value => value !== null, 'no value')
+);
+
+lastNonNull$.subscribe(value => {
+  console.log('Last non-null:', value);
+});
+// Output: Last non-null: 3
+```
+
+<Tip>
+If you need multiple last values (e.g., last 3), use `takeLast(3)` instead of `last()`.
+</Tip>
+
+### Aggregate Final Result
+
+```typescript
+import { from, last, scan } from 'rxjs';
+
+const transactions$ = from([10, 20, -5, 15, -10]);
+
+const finalBalance$ = transactions$.pipe(
+  scan((balance, transaction) => balance + transaction, 0),
+  last()
+);
+
+finalBalance$.subscribe(balance => {
+  console.log('Final balance:', balance);
+});
+// Output: Final balance: 30
+```
+
+## Error Handling
+
+```typescript
+import { EMPTY, last, of } from 'rxjs';
+
+// EmptyError when no value emitted
+EMPTY.pipe(last()).subscribe(
+  value => console.log('Value:', value),
+  err => console.error('Error:', err.name)
+);
+// Output: Error: EmptyError
+
+// No error with default value
+EMPTY.pipe(last(null, 'default')).subscribe(
+  value => console.log('Value:', value)
+);
+// Output: Value: default
+
+// EmptyError when condition not met
+of(1, 2, 3).pipe(
+  last(x => x > 10)
+).subscribe(
+  value => console.log('Value:', value),
+  err => console.error('Error:', err.name)
+);
+// Output: Error: EmptyError
+```
+
+## Comparison with Similar Operators
+
+```typescript
+import { of, last, first, takeLast } from 'rxjs';
+
+const nums$ = of(1, 2, 3, 4, 5);
+
+// Get last single value
+nums$.pipe(last()).subscribe(console.log);
+// Output: 5
+
+// Get first single value
+nums$.pipe(first()).subscribe(console.log);
+// Output: 1
+
+// Get last 3 values (array)
+nums$.pipe(takeLast(3)).subscribe(console.log);
+// Output: [3, 4, 5]
+```
+
+## Performance Note
+
+<Warning>
+`last` must wait for the source to complete before emitting. For long-running or infinite streams, this operator will never emit.
+</Warning>
+
+```typescript
+import { interval, last } from 'rxjs';
+
+// This will NEVER emit (infinite stream)
+const infinite$ = interval(1000).pipe(
+  last()
+);
+
+// Add take() to make it finite
+const finite$ = interval(1000).pipe(
+  take(5),
+  last()
+);
+
+finite$.subscribe(value => {
+  console.log('Last value:', value);
+});
+// Output after 5 seconds: Last value: 4
+```
+
+## Related Operators
+
+- **[first](/api/operators/first)** - Emits the first value
+- **[takeLast](/api/operators/takeLast)** - Emits the last N values as they arrive
+- **[elementAt](/api/operators/elementAt)** - Emits value at specific index
+- **[skip](/api/operators/skip)** - Skip first N values
+- **[skipLast](/api/operators/skipLast)** - Skip last N values

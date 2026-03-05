@@ -1,0 +1,292 @@
+---
+title: debounceTime
+description: Delays emissions until a specified period of silence has passed
+---
+
+## Overview
+
+Emits a notification from the source Observable only after a particular time span has passed without another source emission.
+
+<Note>
+`debounceTime` is a **rate-limiting** operator that waits for silence. It's perfect for search-as-you-type, form validation, and any scenario where you want to wait until the user stops performing an action.
+</Note>
+
+## Type Signature
+
+```typescript
+function debounceTime<T>(
+  dueTime: number,
+  scheduler: SchedulerLike = asyncScheduler
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="dueTime" type="number" required>
+  The timeout duration in milliseconds (or the time unit determined internally by the optional `scheduler`) for the window of time required to wait for emission silence before emitting the most recent source value.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The SchedulerLike to use for managing the timers that handle the timeout for each value.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that delays the emissions of the source Observable by the specified `dueTime`, and may drop some values if they occur too frequently.
+
+## How It Works
+
+1. When a value arrives, it's **cached** and a timer starts
+2. If a **new value** arrives before the timer expires:
+   - The **timer is reset**
+   - The previous value is **dropped**
+   - The new value becomes the cached value
+3. When the timer **expires** (silence achieved), the cached value is **emitted**
+4. If the source **completes** during a pending timer, the cached value is emitted before completion
+
+<Warning>
+If an error occurs during or after the scheduled duration, only the error is forwarded. The cached value is **not** emitted.
+</Warning>
+
+## Usage Examples
+
+### Basic Example: Search Input
+
+```typescript
+import { fromEvent, debounceTime } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(debounceTime(1000));
+
+result.subscribe(x => console.log(x));
+// Only emits when clicking stops for 1 second
+```
+
+### Search-as-You-Type
+
+```typescript
+import { fromEvent, debounceTime, map, distinctUntilChanged, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(300), // Wait 300ms after user stops typing
+  distinctUntilChanged(), // Only if the value changed
+  switchMap(term => 
+    ajax.getJSON(`/api/search?q=${encodeURIComponent(term)}`)
+  )
+);
+
+search$.subscribe(results => {
+  console.log('Search results:', results);
+  displayResults(results);
+});
+```
+
+### Form Validation
+
+```typescript
+import { fromEvent, debounceTime, map } from 'rxjs';
+
+const emailInput = document.querySelector('#email') as HTMLInputElement;
+const errorDiv = document.querySelector('#email-error') as HTMLDivElement;
+
+const emailValidation$ = fromEvent(emailInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(500) // Wait 500ms after user stops typing
+);
+
+emailValidation$.subscribe(email => {
+  if (!email.includes('@')) {
+    errorDiv.textContent = 'Invalid email address';
+  } else {
+    errorDiv.textContent = '';
+  }
+});
+```
+
+<CodeGroup>
+```typescript Auto-Save
+import { fromEvent, debounceTime, map, switchMap, tap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const textarea = document.querySelector('#content') as HTMLTextAreaElement;
+const statusDiv = document.querySelector('#status') as HTMLDivElement;
+
+const autoSave$ = fromEvent(textarea, 'input').pipe(
+  debounceTime(2000), // Save 2 seconds after user stops typing
+  map(() => textarea.value),
+  tap(() => statusDiv.textContent = 'Saving...'),
+  switchMap(content => 
+    ajax.post('/api/save', { content })
+  )
+);
+
+autoSave$.subscribe(
+  () => statusDiv.textContent = 'Saved ✓',
+  () => statusDiv.textContent = 'Save failed ✗'
+);
+```
+
+```typescript Window Resize
+import { fromEvent, debounceTime } from 'rxjs';
+
+const resize$ = fromEvent(window, 'resize').pipe(
+  debounceTime(200)
+);
+
+resize$.subscribe(() => {
+  console.log('Resize complete:', window.innerWidth, window.innerHeight);
+  // Recalculate layout
+  recalculateLayout();
+});
+
+function recalculateLayout() {
+  // Expensive layout calculation
+}
+```
+
+```typescript Live Username Check
+import { fromEvent, debounceTime, map, distinctUntilChanged, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const usernameInput = document.querySelector('#username') as HTMLInputElement;
+const feedback = document.querySelector('#username-feedback') as HTMLDivElement;
+
+const usernameCheck$ = fromEvent(usernameInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(500),
+  distinctUntilChanged(),
+  switchMap(username => 
+    ajax.getJSON(`/api/check-username?username=${username}`)
+  )
+);
+
+usernameCheck$.subscribe(
+  (response: any) => {
+    feedback.textContent = response.available 
+      ? '✓ Available' 
+      : '✗ Already taken';
+  }
+);
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `debounceTime` when:
+- **Search-as-you-type** functionality
+- **Form validation** that requires API calls
+- **Auto-save** features
+- Waiting for **user to finish** an action (typing, resizing, scrolling)
+- Reducing **API calls** from rapid user input
+
+### Don't use `debounceTime` when:
+- You want **regular sampling** (use `auditTime` or `throttleTime`)
+- You need the **first** value in a burst (use `throttleTime`)
+- The delay needs to be **dynamic** (use `debounce`)
+- **Every value** matters (use `buffer` or consider other operators)
+
+## Common Patterns
+
+### Search with Loading State
+
+```typescript
+import { fromEvent, debounceTime, map, distinctUntilChanged, switchMap, startWith } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+const spinner = document.querySelector('#spinner') as HTMLElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(300),
+  distinctUntilChanged(),
+  switchMap(term => {
+    spinner.style.display = 'block';
+    return ajax.getJSON(`/api/search?q=${term}`);
+  })
+);
+
+search$.subscribe(
+  results => {
+    spinner.style.display = 'none';
+    displayResults(results);
+  },
+  error => {
+    spinner.style.display = 'none';
+    console.error('Search failed:', error);
+  }
+);
+```
+
+### Multi-Field Form Validation
+
+```typescript
+import { merge, fromEvent, debounceTime, map } from 'rxjs';
+
+const emailInput = document.querySelector('#email') as HTMLInputElement;
+const passwordInput = document.querySelector('#password') as HTMLInputElement;
+
+const email$ = fromEvent(emailInput, 'input').pipe(
+  map(() => ({ field: 'email', value: emailInput.value })),
+  debounceTime(400)
+);
+
+const password$ = fromEvent(passwordInput, 'input').pipe(
+  map(() => ({ field: 'password', value: passwordInput.value })),
+  debounceTime(400)
+);
+
+const formValidation$ = merge(email$, password$);
+
+formValidation$.subscribe(({ field, value }) => {
+  validateField(field, value);
+});
+```
+
+<Tip>
+The optimal `debounceTime` value depends on the use case:
+- **Search**: 300-500ms
+- **Form validation**: 400-600ms  
+- **Auto-save**: 1000-3000ms
+- **Resize/scroll**: 100-200ms
+</Tip>
+
+## Performance Considerations
+
+```typescript
+import { fromEvent, debounceTime, map } from 'rxjs';
+
+// BAD: Creates new subscription on every keystroke
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value)
+);
+
+search$.subscribe(term => {
+  // This runs on EVERY keystroke - too many API calls!
+  fetch(`/api/search?q=${term}`);
+});
+
+// GOOD: Debounces before making API calls
+const betterSearch$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(300), // Wait for user to stop typing
+  distinctUntilChanged() // Skip if value didn't change
+);
+
+betterSearch$.subscribe(term => {
+  // Only runs after 300ms of silence and value changed
+  fetch(`/api/search?q=${term}`);
+});
+```
+
+## Related Operators
+
+- **[debounce](/api/operators/debounce)** - Same behavior but with dynamic duration
+- **[auditTime](/api/operators/auditTime)** - Emits after duration without requiring silence
+- **[throttleTime](/api/operators/throttleTime)** - Emits first value in each window
+- **[distinctUntilChanged](/api/operators/distinctUntilChanged)** - Commonly paired to filter duplicates
+- **[switchMap](/api/operators/switchMap)** - Commonly used after debounce for API calls

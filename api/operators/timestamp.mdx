@@ -1,0 +1,362 @@
+---
+title: 'timestamp'
+description: 'Attach a timestamp to each value emitted by an Observable'
+---
+
+## Overview
+
+The `timestamp` operator attaches a timestamp to each item emitted by the source Observable, indicating when it was emitted. Values are transformed into objects containing both the original value and the timestamp.
+
+## Signature
+
+```typescript
+function timestamp<T>(
+  timestampProvider: TimestampProvider = dateTimestampProvider
+): OperatorFunction<T, Timestamp<T>>
+```
+
+## Parameters
+
+<ParamField path="timestampProvider" type="TimestampProvider" default="dateTimestampProvider">
+  An object with a `now()` method that returns the current timestamp. The default provider uses `Date.now()` which returns milliseconds since Unix epoch.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="OperatorFunction<T, Timestamp<T>>">
+  An Observable that emits objects of type `{ value: T, timestamp: number }` where:
+  - `value`: The original emitted value
+  - `timestamp`: When the value was emitted (from `timestampProvider.now()`)
+</ParamField>
+
+## Timestamp Type
+
+```typescript
+interface Timestamp<T> {
+  value: T;
+  timestamp: number;
+}
+```
+
+## Usage Examples
+
+### Basic Timestamp
+
+Add timestamps to click events:
+
+<CodeGroup>
+```typescript Click timestamps
+import { fromEvent, timestamp } from 'rxjs';
+
+const clickWithTimestamp = fromEvent(document, 'click').pipe(
+  timestamp()
+);
+
+// Emits: { value: PointerEvent, timestamp: 1678901234567 }
+clickWithTimestamp.subscribe(data => {
+  console.log('Clicked at:', new Date(data.timestamp));
+  console.log('Event:', data.value);
+});
+```
+
+```typescript Measure intervals
+import { interval, timestamp, map } from 'rxjs';
+import { pairwise } from 'rxjs/operators';
+
+interval(1000).pipe(
+  timestamp(),
+  pairwise(),
+  map(([prev, curr]) => curr.timestamp - prev.timestamp)
+).subscribe(diff => {
+  console.log(`Actual interval: ${diff}ms`);
+});
+// Shows real timing between emissions
+```
+</CodeGroup>
+
+### Performance Monitoring
+
+Track how long operations take:
+
+```typescript
+import { fromEvent, timestamp, map } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search');
+
+fromEvent(searchInput, 'input').pipe(
+  timestamp(),
+  switchMap(({ value: event, timestamp: startTime }) => 
+    ajax.getJSON(`/api/search?q=${event.target.value}`).pipe(
+      timestamp(),
+      map(({ value: results, timestamp: endTime }) => ({
+        results,
+        duration: endTime - startTime
+      }))
+    )
+  )
+).subscribe(({ results, duration }) => {
+  console.log(`Search took ${duration}ms`);
+  console.log('Results:', results);
+});
+```
+
+### Rate Calculation
+
+Calculate events per second:
+
+```typescript
+import { fromEvent, timestamp, bufferTime, map } from 'rxjs';
+
+fromEvent(document, 'mousemove').pipe(
+  timestamp(),
+  bufferTime(1000),
+  map(events => ({
+    count: events.length,
+    firstTimestamp: events[0]?.timestamp,
+    lastTimestamp: events[events.length - 1]?.timestamp,
+    span: events.length > 1 
+      ? events[events.length - 1].timestamp - events[0].timestamp
+      : 0
+  }))
+).subscribe(stats => {
+  console.log(`${stats.count} events in ${stats.span}ms`);
+  if (stats.span > 0) {
+    console.log(`Rate: ${(stats.count / stats.span * 1000).toFixed(2)} events/sec`);
+  }
+});
+```
+
+### User Activity Tracking
+
+Track when users interact with your app:
+
+```typescript
+import { merge, fromEvent, timestamp, map } from 'rxjs';
+import { scan } from 'rxjs/operators';
+
+interface ActivityLog {
+  type: string;
+  timestamp: number;
+}
+
+const clicks$ = fromEvent(document, 'click').pipe(
+  map(() => ({ type: 'click' }))
+);
+
+const keypresses$ = fromEvent(document, 'keypress').pipe(
+  map(() => ({ type: 'keypress' }))
+);
+
+const scrolls$ = fromEvent(window, 'scroll').pipe(
+  map(() => ({ type: 'scroll' }))
+);
+
+merge(clicks$, keypresses$, scrolls$).pipe(
+  timestamp(),
+  scan((log, item) => {
+    log.push({
+      type: item.value.type,
+      timestamp: item.timestamp
+    });
+    return log.slice(-100); // Keep last 100 events
+  }, [] as ActivityLog[])
+).subscribe(activityLog => {
+  console.log('Recent activity:', activityLog);
+  saveToAnalytics(activityLog);
+});
+```
+
+### Debounce with Timestamp
+
+Custom debounce based on timestamp:
+
+```typescript
+import { fromEvent, timestamp, filter } from 'rxjs';
+import { scan } from 'rxjs/operators';
+
+fromEvent(button, 'click').pipe(
+  timestamp(),
+  scan((acc, curr) => ({ prev: acc.curr, curr }), 
+    { prev: null, curr: null }
+  ),
+  filter(({ prev, curr }) => 
+    !prev || (curr.timestamp - prev.timestamp) > 1000
+  ),
+  map(({ curr }) => curr.value)
+).subscribe(() => {
+  console.log('Click accepted (>1s since last)');
+});
+```
+
+## How It Works
+
+The `timestamp` operator is implemented as a simple map:
+
+```typescript
+export function timestamp<T>(
+  timestampProvider: TimestampProvider = dateTimestampProvider
+): OperatorFunction<T, Timestamp<T>> {
+  return map((value: T) => ({ 
+    value, 
+    timestamp: timestampProvider.now() 
+  }));
+}
+```
+
+For each emitted value, it creates an object with:
+- `value`: The original value
+- `timestamp`: Current time from the provider
+
+## Custom Timestamp Provider
+
+You can provide a custom timestamp source:
+
+```typescript
+import { timestamp } from 'rxjs';
+
+// High-resolution timer (Node.js)
+const performanceProvider = {
+  now: () => performance.now()
+};
+
+source$.pipe(
+  timestamp(performanceProvider)
+).subscribe(data => {
+  console.log('High-res timestamp:', data.timestamp);
+});
+
+// Custom epoch
+const customEpoch = Date.now();
+const customProvider = {
+  now: () => Date.now() - customEpoch
+};
+
+source$.pipe(
+  timestamp(customProvider)
+).subscribe(data => {
+  console.log('Milliseconds since start:', data.timestamp);
+});
+```
+
+## Common Use Cases
+
+<Tip>
+  Use `timestamp` when you need to:
+  - Track when events occurred
+  - Measure time between events
+  - Calculate rates or frequencies
+  - Log events with timing information
+  - Implement custom timing logic
+</Tip>
+
+1. **Performance Monitoring**: Measure operation duration
+2. **Analytics**: Track user interaction timing
+3. **Rate Limiting**: Calculate event frequency
+4. **Debugging**: Add timing information to logs
+5. **Custom Debouncing**: Implement time-based filtering
+6. **Replay Systems**: Store events with timestamps for replay
+
+## Default Timestamp Provider
+
+The default `dateTimestampProvider` uses `Date.now()`:
+
+```typescript
+export const dateTimestampProvider: TimestampProvider = {
+  now() {
+    return Date.now();
+  }
+};
+```
+
+This returns milliseconds since January 1, 1970 00:00:00 UTC (Unix epoch).
+
+## Performance Considerations
+
+- `timestamp()` is very lightweight - just wraps values in objects
+- `Date.now()` is fast but less precise than `performance.now()`
+- For high-frequency events, the object creation overhead is minimal
+- Consider using `auditTime` or `throttleTime` before `timestamp` for high-frequency sources
+
+## Accessing Original Values
+
+After using `timestamp`, extract values when needed:
+
+```typescript
+import { interval, timestamp, map } from 'rxjs';
+
+interval(1000).pipe(
+  timestamp(),
+  // Later, extract just the value
+  map(({ value }) => value)
+).subscribe(console.log);
+```
+
+Or use destructuring directly:
+
+```typescript
+interval(1000).pipe(
+  timestamp()
+).subscribe(({ value, timestamp }) => {
+  console.log(`Value ${value} at ${timestamp}`);
+});
+```
+
+## Comparison with Similar Patterns
+
+| Approach | Use Case | Precision |
+|----------|----------|----------|
+| `timestamp()` | Standard timing | Millisecond |
+| `map(() => Date.now())` | Just timestamp, no value | Millisecond |
+| `timestamp(performanceProvider)` | High precision | Microsecond |
+| `scan` with timestamp | Cumulative timing | Custom |
+
+## Example: Request/Response Timing
+
+Track full request lifecycle:
+
+```typescript
+import { fromEvent, timestamp, switchMap, map } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface RequestLog {
+  requestTime: number;
+  responseTime: number;
+  duration: number;
+  url: string;
+}
+
+fromEvent(button, 'click').pipe(
+  timestamp(),
+  switchMap(({ timestamp: requestTime }) => 
+    ajax.getJSON('/api/data').pipe(
+      timestamp(),
+      map(({ timestamp: responseTime, value }) => ({
+        requestTime,
+        responseTime,
+        duration: responseTime - requestTime,
+        url: '/api/data',
+        data: value
+      }))
+    )
+  )
+).subscribe(log => {
+  console.log(`Request took ${log.duration}ms`);
+  console.log('Data:', log.data);
+});
+```
+
+## Related Operators
+
+- [map](/api/operators/map) - Transform values
+- [timeInterval](/api/operators/timeInterval) - Time between emissions
+- [delay](/api/operators/delay) - Delay emissions
+- [timeout](/api/operators/timeout) - Error on slow emissions
+- [auditTime](/api/operators/auditTime) - Sample at intervals
+
+## See Also
+
+- [RxJS timestamp documentation](https://rxjs.dev/api/operators/timestamp)
+- [Time-based Operators Guide](/guides/time-operators)
+- [Performance Monitoring Guide](/guides/performance)

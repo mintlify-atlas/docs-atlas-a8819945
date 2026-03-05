@@ -1,0 +1,171 @@
+---
+title: Introduction to RxJS
+description: Learn about RxJS, the reactive programming library for JavaScript that makes working with asynchronous data streams simple and powerful
+---
+
+# Introduction to RxJS
+
+RxJS is a library for composing asynchronous and event-based programs by using observable sequences. It provides one core type, the **Observable**, satellite types (Observer, Schedulers, Subjects), and operators inspired by `Array` methods (`map`, `filter`, `reduce`, `every`, etc) to allow handling asynchronous events as collections.
+
+<Info>
+**Think of RxJS as Lodash for events.**
+
+Just as Lodash helps you manipulate arrays and objects, RxJS helps you manage and transform streams of asynchronous events with ease.
+</Info>
+
+## What is Reactive Programming?
+
+ReactiveX combines the [Observer pattern](https://en.wikipedia.org/wiki/Observer_pattern) with the [Iterator pattern](https://en.wikipedia.org/wiki/Iterator_pattern) and functional programming with collections to fill the need for an ideal way of managing sequences of events.
+
+## Core Concepts
+
+The essential concepts in RxJS which solve async event management are:
+
+<CardGroup cols={2}>
+  <Card title="Observable" icon="wave-pulse">
+    Represents the idea of an invokable collection of future values or events.
+  </Card>
+  <Card title="Observer" icon="eye">
+    A collection of callbacks that knows how to listen to values delivered by the Observable.
+  </Card>
+  <Card title="Subscription" icon="link">
+    Represents the execution of an Observable, primarily useful for cancelling the execution.
+  </Card>
+  <Card title="Operators" icon="gear">
+    Pure functions that enable a functional programming style of dealing with collections with operations like `map`, `filter`, `concat`, `reduce`, etc.
+  </Card>
+  <Card title="Subject" icon="diagram-project">
+    Equivalent to an EventEmitter, and the only way of multicasting a value or event to multiple Observers.
+  </Card>
+  <Card title="Schedulers" icon="clock">
+    Centralized dispatchers to control concurrency, allowing us to coordinate when computation happens on e.g. `setTimeout` or `requestAnimationFrame`.
+  </Card>
+</CardGroup>
+
+## Why RxJS?
+
+### Purity
+
+What makes RxJS powerful is its ability to produce values using pure functions. That means your code is less prone to errors.
+
+<CodeGroup>
+```typescript Plain JavaScript (Impure)
+let count = 0;
+document.addEventListener('click', () => {
+  console.log(`Clicked ${++count} times`);
+});
+
+// Problem: count is mutable and can be modified from anywhere
+```
+
+```typescript RxJS (Pure)
+import { fromEvent, scan } from 'rxjs';
+
+fromEvent(document, 'click')
+  .pipe(scan((count) => count + 1, 0))
+  .subscribe((count) => console.log(`Clicked ${count} times`));
+
+// Benefits: State is isolated and immutable
+```
+</CodeGroup>
+
+<Note>
+The `scan` operator works just like `reduce` for arrays. It takes a value which is exposed to a callback. The returned value of the callback will then become the next value exposed the next time the callback runs.
+</Note>
+
+### Flow Control
+
+RxJS has a whole range of operators that helps you control how the events flow through your observables.
+
+<CodeGroup>
+```typescript Plain JavaScript
+let count = 0;
+let rate = 1000;
+let lastClick = Date.now() - rate;
+
+document.addEventListener('click', () => {
+  if (Date.now() - lastClick >= rate) {
+    console.log(`Clicked ${++count} times`);
+    lastClick = Date.now();
+  }
+});
+```
+
+```typescript RxJS
+import { fromEvent, throttleTime, scan } from 'rxjs';
+
+fromEvent(document, 'click')
+  .pipe(
+    throttleTime(1000),
+    scan((count) => count + 1, 0)
+  )
+  .subscribe((count) => console.log(`Clicked ${count} times`));
+```
+</CodeGroup>
+
+<Tip>
+Other flow control operators include: `filter`, `delay`, `debounceTime`, `take`, `takeUntil`, `distinct`, and `distinctUntilChanged`.
+</Tip>
+
+### Value Transformation
+
+You can transform the values passed through your observables with powerful operators.
+
+<CodeGroup>
+```typescript Plain JavaScript
+let count = 0;
+const rate = 1000;
+let lastClick = Date.now() - rate;
+
+document.addEventListener('click', (event) => {
+  if (Date.now() - lastClick >= rate) {
+    count += event.clientX;
+    console.log(count);
+    lastClick = Date.now();
+  }
+});
+```
+
+```typescript RxJS
+import { fromEvent, throttleTime, map, scan } from 'rxjs';
+
+fromEvent(document, 'click')
+  .pipe(
+    throttleTime(1000),
+    map((event) => event.clientX),
+    scan((count, clientX) => count + clientX, 0)
+  )
+  .subscribe((count) => console.log(count));
+```
+</CodeGroup>
+
+## Simple Example: Events to Observables
+
+Normally you register event listeners:
+
+```typescript
+document.addEventListener('click', () => console.log('Clicked!'));
+```
+
+Using RxJS you create an observable instead:
+
+```typescript
+import { fromEvent } from 'rxjs';
+
+fromEvent(document, 'click').subscribe(() => console.log('Clicked!'));
+```
+
+## Use Cases
+
+RxJS excels at:
+
+- **Event handling**: Mouse clicks, keyboard input, touch events
+- **API requests**: HTTP calls, WebSocket connections, Server-Sent Events
+- **Animations**: Coordinating complex animation sequences
+- **Real-time data**: Live updates, notifications, streaming data
+- **State management**: Managing application state reactively
+- **Error handling**: Retrying failed operations, fallback strategies
+
+<Card title="Ready to get started?" icon="rocket" href="/installation">
+  Install RxJS and start building reactive applications
+</Card>

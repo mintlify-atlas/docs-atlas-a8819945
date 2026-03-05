@@ -1,0 +1,469 @@
+---
+title: 'asapScheduler'
+description: 'Perform tasks as fast as possible asynchronously using microtasks'
+---
+
+## Overview
+
+The `asapScheduler` scheduler performs tasks as fast as possible asynchronously by scheduling them on the microtask queue. It behaves like `asyncScheduler` when used with a delay, but with delay `0`, it executes tasks faster by using the microtask queue instead of `setTimeout`.
+
+<Note>
+  `asapScheduler` uses the microtask queue (like Promises) for fastest possible asynchronous execution. It's perfect for "defer to next tick" scenarios.
+</Note>
+
+## Type
+
+```typescript
+const asapScheduler: AsapScheduler
+```
+
+## Usage
+
+<ParamField path="asapScheduler.schedule" type="(work: (state?: any) => void, delay?: number, state?: any) => Subscription">
+  Schedule a task to execute as soon as possible.
+  
+  - `work`: Function to execute
+  - `delay`: Delay in milliseconds (0 = microtask, >0 = macrotask)
+  - `state`: Optional state to pass to the work function
+</ParamField>
+
+<ParamField path="asapScheduler.now" type="() => number">
+  Returns the current time as milliseconds since Unix epoch.
+</ParamField>
+
+## Usage Examples
+
+### Defer to Next Tick
+
+Execute code after current synchronous execution:
+
+<CodeGroup>
+```typescript Microtask execution
+import { asapScheduler } from 'rxjs';
+
+console.log('1: Synchronous start');
+
+asapScheduler.schedule(() => {
+  console.log('3: ASAP task');
+});
+
+console.log('2: Synchronous end');
+
+// Output:
+// 1: Synchronous start
+// 2: Synchronous end
+// 3: ASAP task
+```
+
+```typescript Compare with asyncScheduler
+import { asapScheduler, asyncScheduler } from 'rxjs';
+
+console.log('Start');
+
+asyncScheduler.schedule(() => console.log('Async (macrotask)'));
+asapScheduler.schedule(() => console.log('ASAP (microtask)'));
+
+console.log('End');
+
+// Output:
+// Start
+// End
+// ASAP (microtask)
+// Async (macrotask)
+```
+</CodeGroup>
+
+### Priority Execution
+
+ASAP tasks execute before async tasks:
+
+```typescript
+import { asapScheduler, asyncScheduler } from 'rxjs';
+
+asyncScheduler.schedule(() => console.log('async')); // Macro task
+asapScheduler.schedule(() => console.log('asap'));   // Micro task
+
+// Output:
+// asap
+// async
+// ASAP executes first despite being scheduled second!
+```
+
+### Immediate UI Updates
+
+Update UI after state changes:
+
+```typescript
+import { asapScheduler } from 'rxjs';
+
+class Counter {
+  private count = 0;
+  
+  increment(): void {
+    this.count++;
+    
+    // Defer UI update to ensure all state changes complete
+    asapScheduler.schedule(() => {
+      this.updateDisplay();
+    });
+  }
+  
+  private updateDisplay(): void {
+    document.getElementById('counter').textContent = String(this.count);
+  }
+}
+
+const counter = new Counter();
+
+// Multiple increments
+counter.increment();
+counter.increment();
+counter.increment();
+// UI updates once after all increments complete
+```
+
+### Break Up Synchronous Work
+
+Prevent blocking the UI thread:
+
+```typescript
+import { asapScheduler } from 'rxjs';
+
+function processLargeArray(items: any[]): void {
+  const chunkSize = 100;
+  
+  function processChunk(startIndex: number): void {
+    const endIndex = Math.min(startIndex + chunkSize, items.length);
+    
+    // Process chunk synchronously
+    for (let i = startIndex; i < endIndex; i++) {
+      processItem(items[i]);
+    }
+    
+    // Schedule next chunk asynchronously
+    if (endIndex < items.length) {
+      asapScheduler.schedule(() => processChunk(endIndex));
+    } else {
+      console.log('Processing complete');
+    }
+  }
+  
+  processChunk(0);
+}
+
+processLargeArray(hugeArray);
+```
+
+### Coordinate with Promises
+
+Schedule work in same queue as Promises:
+
+```typescript
+import { asapScheduler } from 'rxjs';
+
+console.log('1: Sync');
+
+Promise.resolve().then(() => console.log('2: Promise'));
+
+asapScheduler.schedule(() => console.log('3: ASAP'));
+
+Promise.resolve().then(() => console.log('4: Promise'));
+
+console.log('5: Sync');
+
+// Output:
+// 1: Sync
+// 5: Sync
+// 2: Promise
+// 3: ASAP
+// 4: Promise
+// (All microtasks execute in order)
+```
+
+### Batched Updates
+
+Batch multiple updates into single execution:
+
+```typescript
+import { asapScheduler } from 'rxjs';
+
+class BatchedLogger {
+  private pendingLogs: string[] = [];
+  private scheduled = false;
+  
+  log(message: string): void {
+    this.pendingLogs.push(message);
+    
+    if (!this.scheduled) {
+      this.scheduled = true;
+      
+      asapScheduler.schedule(() => {
+        console.log('Batch:', this.pendingLogs.join(', '));
+        this.pendingLogs = [];
+        this.scheduled = false;
+      });
+    }
+  }
+}
+
+const logger = new BatchedLogger();
+
+logger.log('First');
+logger.log('Second');
+logger.log('Third');
+
+// Output (single batch):
+// Batch: First, Second, Third
+```
+
+### With Observables
+
+Use with RxJS operators:
+
+```typescript
+import { of, observeOn, asapScheduler } from 'rxjs';
+
+console.log('Start');
+
+of(1, 2, 3).pipe(
+  observeOn(asapScheduler)
+).subscribe(value => {
+  console.log('Value:', value);
+});
+
+console.log('End');
+
+// Output:
+// Start
+// End
+// Value: 1
+// Value: 2
+// Value: 3
+```
+
+## How It Works
+
+`asapScheduler` uses different mechanisms based on delay:
+
+```typescript
+// Simplified internal implementation
+class AsapScheduler {
+  schedule(work: Function, delay: number = 0) {
+    if (delay > 0) {
+      // Fall back to setTimeout for delayed tasks
+      return setTimeout(work, delay);
+    } else {
+      // Use microtask queue for immediate tasks
+      return scheduleOnMicrotaskQueue(work);
+    }
+  }
+}
+
+// Microtask scheduling (varies by environment)
+function scheduleOnMicrotaskQueue(work: Function) {
+  // Modern browsers: queueMicrotask
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(work);
+  }
+  // Fallback: Promise.resolve()
+  else {
+    Promise.resolve().then(work);
+  }
+}
+```
+
+## Execution Context
+
+<Tip>
+  **Microtask Queue**: asapScheduler uses the microtask queue, which executes:
+  
+  - After current synchronous code completes
+  - Before the next macrotask (setTimeout, setInterval)
+  - Before browser rendering
+  - In the same order they were scheduled (FIFO)
+</Tip>
+
+### Event Loop Position
+
+```typescript
+import { asapScheduler, asyncScheduler } from 'rxjs';
+
+console.log('1: Sync start');
+
+setTimeout(() => console.log('5: setTimeout (macrotask)'), 0);
+
+Promise.resolve().then(() => console.log('3: Promise'));
+
+asapScheduler.schedule(() => console.log('4: ASAP'));
+
+console.log('2: Sync end');
+
+// Execution order:
+// 1. Synchronous code (console.log)
+// 2. Microtasks (Promise, asapScheduler)
+// 3. Macrotasks (setTimeout)
+
+// Output:
+// 1: Sync start
+// 2: Sync end
+// 3: Promise
+// 4: ASAP
+// 5: setTimeout (macrotask)
+```
+
+## Common Use Cases
+
+1. **Defer Execution**: Delay work until after current execution completes
+2. **Batch Operations**: Group multiple operations into single execution
+3. **UI Updates**: Update UI after all state changes
+4. **Coordination**: Execute in same queue as Promises
+5. **Non-Blocking**: Break up long synchronous operations
+6. **Priority Work**: Execute before macrotask queue
+
+## Comparison: asap vs async vs queue
+
+<Tip>
+  **Choose the right scheduler:**
+  
+  - **asapScheduler**: Fastest async (microtask queue)
+  - **asyncScheduler**: Delayed async (macrotask queue)
+  - **queueScheduler**: Synchronous but queued
+</Tip>
+
+| Scheduler | Queue Type | Speed | Use Case |
+|-----------|-----------|-------|----------|
+| asapScheduler | Microtask | Fastest async | Defer to next tick |
+| asyncScheduler | Macrotask | Normal async | Time delays |
+| queueScheduler | Synchronous | Immediate | Recursive ops |
+
+```typescript
+import { asapScheduler, asyncScheduler, queueScheduler } from 'rxjs';
+
+console.log('Start');
+
+queueScheduler.schedule(() => console.log('Queue (sync)'));
+asapScheduler.schedule(() => console.log('ASAP (microtask)'));
+asyncScheduler.schedule(() => console.log('Async (macrotask)'));
+
+console.log('End');
+
+// Output:
+// Start
+// Queue (sync)
+// End
+// ASAP (microtask)
+// Async (macrotask)
+```
+
+## When to Use asapScheduler
+
+<Note>
+  Use `asapScheduler` when you need the fastest possible asynchronous execution, such as:
+  
+  - Deferring work to the next tick
+  - Coordinating with Promise-based code
+  - Batching rapid updates
+  - Breaking up synchronous work
+</Note>
+
+## Performance Benefits
+
+- Faster than `setTimeout` (no 4ms minimum delay)
+- Executes before rendering (good for UI updates)
+- Better for high-frequency scheduling
+- Lower overhead than macrotask scheduling
+
+## Limitations
+
+<Warning>
+  **Microtask queue can block rendering:**
+  
+  Too many microtasks can delay rendering. Long or infinite microtask loops can freeze the UI.
+</Warning>
+
+```typescript
+// ❌ Bad - can block rendering
+function infiniteMicrotasks(n: number) {
+  asapScheduler.schedule(() => {
+    console.log(n);
+    infiniteMicrotasks(n + 1); // Infinite microtask loop!
+  });
+}
+
+// ✅ Better - use asyncScheduler for long-running work
+function safeRecursion(n: number) {
+  asyncScheduler.schedule(() => {
+    console.log(n);
+    safeRecursion(n + 1); // Allows rendering between iterations
+  });
+}
+```
+
+## Best Practices
+
+```typescript
+import { asapScheduler, asyncScheduler } from 'rxjs';
+
+// ✅ Good - Short, finite work
+asapScheduler.schedule(() => {
+  updateUI();
+});
+
+// ✅ Good - Coordinate with Promises
+async function doWork() {
+  await fetchData();
+  asapScheduler.schedule(() => processData());
+}
+
+// ❌ Avoid - Long-running tasks
+asapScheduler.schedule(() => {
+  for (let i = 0; i < 1000000; i++) {
+    // Long loop blocks rendering
+  }
+});
+
+// ✅ Better - Use asyncScheduler for delays
+if (needsDelay) {
+  asyncScheduler.schedule(work, 1000);
+} else {
+  asapScheduler.schedule(work);
+}
+```
+
+## Testing
+
+```typescript
+import { TestScheduler } from 'rxjs/testing';
+import { observeOn } from 'rxjs/operators';
+import { asapScheduler } from 'rxjs';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+
+testScheduler.run(({ cold, expectObservable }) => {
+  const source$ = cold('a-b-c|');
+  
+  expectObservable(
+    source$.pipe(observeOn(testScheduler))
+  ).toBe('a-b-c|');
+});
+```
+
+## Related Schedulers
+
+- [asyncScheduler](/api/schedulers/asyncScheduler) - Macrotask-based scheduling
+- [queueScheduler](/api/schedulers/queueScheduler) - Synchronous queue
+- [animationFrameScheduler](/api/schedulers/animationFrameScheduler) - Animation timing
+
+## Related Concepts
+
+- [Microtasks vs Macrotasks](/guides/event-loop)
+- [Promise](/guides/promises-vs-observables)
+- [Event Loop](/guides/event-loop)
+
+## See Also
+
+- [RxJS asapScheduler documentation](https://rxjs.dev/api/index/const/asapScheduler)
+- [Schedulers Guide](/guides/schedulers)
+- [JavaScript Event Loop](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop)

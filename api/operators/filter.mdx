@@ -1,0 +1,353 @@
+---
+title: filter
+description: Filters items emitted by the source Observable by only emitting those that satisfy a predicate
+---
+
+## Overview
+
+Filter items emitted by the source Observable by only emitting those that satisfy a specified predicate.
+
+<Note>
+Similar to `Array.prototype.filter()`, this operator only emits values from the source if they pass a criterion function. It's one of the most commonly used RxJS operators.
+</Note>
+
+## Type Signature
+
+```typescript
+// Type guard overload
+function filter<T, S extends T>(
+  predicate: (value: T, index: number) => value is S
+): OperatorFunction<T, S>
+
+// Boolean constructor overload
+function filter<T>(
+  predicate: BooleanConstructor
+): OperatorFunction<T, TruthyTypesOf<T>>
+
+// Standard overload
+function filter<T>(
+  predicate: (value: T, index: number) => boolean,
+  thisArg?: any
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="predicate" type="(value: T, index: number) => boolean" required>
+  A function that evaluates each value emitted by the source Observable. If it returns `true`, the value is emitted. If `false`, the value is not passed to the output Observable.
+  
+  The `index` parameter is the number `i` for the i-th source emission that has happened since subscription, starting from `0`.
+</ParamField>
+
+<ParamField path="thisArg" type="any" optional>
+  An optional argument to determine the value of `this` in the `predicate` function.
+  
+  <Warning>This parameter is deprecated and will be removed in v8. Use a closure instead.</Warning>
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** or **`OperatorFunction<T, S>`** - A function that returns an Observable that emits items from the source Observable that satisfy the specified `predicate`.
+
+## How It Works
+
+1. Subscribes to the source Observable
+2. For each emitted value:
+   - Calls the `predicate` function with the value and index
+   - If predicate returns `true`: **emits** the value downstream
+   - If predicate returns `false`: **skips** the value
+3. Forwards all errors and completion notifications
+
+## Usage Examples
+
+### Basic Example: Filter Even Numbers
+
+```typescript
+import { of, filter } from 'rxjs';
+
+const numbers$ = of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+const evenNumbers$ = numbers$.pipe(
+  filter(n => n % 2 === 0)
+);
+
+evenNumbers$.subscribe(console.log);
+// Output: 2, 4, 6, 8, 10
+```
+
+### Filter DOM Events
+
+```typescript
+import { fromEvent, filter } from 'rxjs';
+
+const div = document.createElement('div');
+div.style.cssText = 'width: 200px; height: 200px; background: #09c;';
+document.body.appendChild(div);
+
+const clicks = fromEvent(document, 'click');
+const clicksOnDivs = clicks.pipe(
+  filter(ev => (ev.target as HTMLElement).tagName === 'DIV')
+);
+
+cliclicksOnDivs.subscribe(x => console.log(x));
+```
+
+### Filter with Index
+
+```typescript
+import { from, filter } from 'rxjs';
+
+const items = ['a', 'b', 'c', 'd', 'e'];
+const items$ = from(items);
+
+// Get only items at even indices
+const evenIndexed$ = items$.pipe(
+  filter((value, index) => index % 2 === 0)
+);
+
+evenIndexed$.subscribe(console.log);
+// Output: 'a', 'c', 'e' (indices 0, 2, 4)
+```
+
+<CodeGroup>
+```typescript Type Guards
+import { of, filter } from 'rxjs';
+
+type Result = { success: true; data: string } | { success: false; error: string };
+
+const results$ = of<Result>(
+  { success: true, data: 'Hello' },
+  { success: false, error: 'Failed' },
+  { success: true, data: 'World' }
+);
+
+// TypeScript knows these are success results
+const successResults$ = results$.pipe(
+  filter((result): result is { success: true; data: string } => result.success)
+);
+
+successResults$.subscribe(result => {
+  // TypeScript knows result.data exists
+  console.log(result.data.toUpperCase());
+});
+```
+
+```typescript Filter Objects
+import { of, filter } from 'rxjs';
+
+interface User {
+  id: number;
+  name: string;
+  active: boolean;
+  role: 'admin' | 'user';
+}
+
+const users$ = of<User>(
+  { id: 1, name: 'Alice', active: true, role: 'admin' },
+  { id: 2, name: 'Bob', active: false, role: 'user' },
+  { id: 3, name: 'Charlie', active: true, role: 'user' }
+);
+
+// Get only active admin users
+const activeAdmins$ = users$.pipe(
+  filter(user => user.active && user.role === 'admin')
+);
+
+activeAdmins$.subscribe(user => {
+  console.log('Active admin:', user.name);
+});
+```
+
+```typescript API Responses
+import { interval, filter, map, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+interface ApiResponse {
+  status: 'pending' | 'complete' | 'error';
+  data?: any;
+}
+
+const polling$ = interval(1000).pipe(
+  switchMap(() => ajax.getJSON<ApiResponse>('/api/status')),
+  filter(response => response.status === 'complete')
+);
+
+polling$.subscribe(response => {
+  console.log('Process complete:', response.data);
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `filter` when:
+- You need to **conditionally emit** values based on criteria
+- **Filtering events** based on properties (click position, key codes, etc.)
+- Removing **invalid or unwanted** values from a stream
+- Implementing **type guards** for type narrowing
+- **Conditional processing** in reactive pipelines
+
+### Don't use `filter` when:
+- You want to **transform** values (use `map` instead)
+- You need only **consecutive distinct** values (use `distinctUntilChanged`)
+- You want to **limit count** (use `take`, `skip`, etc.)
+- You need **one specific value** (use `first`, `last`, `find`)
+
+## Common Patterns
+
+### Filter Truthy Values
+
+```typescript
+import { of, filter } from 'rxjs';
+
+const values$ = of(0, 1, '', 'hello', null, undefined, false, true);
+
+const truthy$ = values$.pipe(
+  filter(Boolean) // Filters out falsy values
+);
+
+truthy$.subscribe(console.log);
+// Output: 1, 'hello', true
+```
+
+### Filter Keyboard Events
+
+```typescript
+import { fromEvent, filter } from 'rxjs';
+
+const keypress$ = fromEvent<KeyboardEvent>(document, 'keydown');
+
+// Only Enter key
+const enterPress$ = keypress$.pipe(
+  filter(event => event.key === 'Enter')
+);
+
+// Only Ctrl+S
+const ctrlS$ = keypress$.pipe(
+  filter(event => event.ctrlKey && event.key === 's')
+);
+
+enterPress$.subscribe(() => console.log('Enter pressed'));
+ctrlS$.subscribe(e => {
+  e.preventDefault();
+  console.log('Save triggered');
+});
+```
+
+### Filter Valid Form Input
+
+```typescript
+import { fromEvent, filter, map } from 'rxjs';
+
+const emailInput = document.querySelector('#email') as HTMLInputElement;
+
+const validEmails$ = fromEvent(emailInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  filter(email => {
+    // Simple email validation
+    return email.includes('@') && email.includes('.');
+  })
+);
+
+validEmails$.subscribe(email => {
+  console.log('Valid email:', email);
+});
+```
+
+### Complex Filtering Logic
+
+```typescript
+import { of, filter } from 'rxjs';
+
+interface Product {
+  id: number;
+  name: string;
+  price: number;
+  inStock: boolean;
+  category: string;
+}
+
+const products$ = getProducts();
+
+const affordableInStockElectronics$ = products$.pipe(
+  filter(product => 
+    product.inStock &&
+    product.price < 100 &&
+    product.category === 'electronics'
+  )
+);
+
+affordableInStockElectronics$.subscribe(product => {
+  console.log('Available:', product.name);
+});
+```
+
+<Tip>
+Combine multiple `filter` operators for better readability rather than using complex boolean logic in a single predicate.
+</Tip>
+
+### Chaining Filters
+
+```typescript
+import { of, filter } from 'rxjs';
+
+const numbers$ = of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+const result$ = numbers$.pipe(
+  filter(n => n > 3),        // Greater than 3
+  filter(n => n % 2 === 0),  // Even numbers
+  filter(n => n < 9)         // Less than 9
+);
+
+result$.subscribe(console.log);
+// Output: 4, 6, 8
+```
+
+### Filter with State
+
+```typescript
+import { fromEvent, filter, scan } from 'rxjs';
+
+const clicks$ = fromEvent(document, 'click');
+
+// Only emit every 3rd click
+const everyThirdClick$ = clicks$.pipe(
+  scan((count, event) => ({ count: count.count + 1, event }), { count: 0, event: null as any }),
+  filter(({ count }) => count % 3 === 0)
+);
+
+everyThirdClick$.subscribe(({ count, event }) => {
+  console.log(`Click #${count}`, event);
+});
+```
+
+## Performance Considerations
+
+```typescript
+import { range, filter, map } from 'rxjs';
+
+// GOOD: Filter before expensive operations
+const efficient$ = range(1, 1000).pipe(
+  filter(n => n % 2 === 0),    // Filter first (500 items)
+  map(n => expensiveOperation(n)) // Only 500 operations
+);
+
+// BAD: Expensive operation before filter
+const inefficient$ = range(1, 1000).pipe(
+  map(n => expensiveOperation(n)), // 1000 operations
+  filter(result => result.isValid)  // Then filter
+);
+```
+
+<Warning>
+Avoid side effects in the predicate function. The predicate should be a pure function that only returns true or false.
+</Warning>
+
+## Related Operators
+
+- **[distinct](/api/operators/distinct)** - Filters out duplicate values across the stream
+- **[distinctUntilChanged](/api/operators/distinctUntilChanged)** - Filters consecutive duplicates
+- **[first](/api/operators/first)** - Emits first value matching predicate
+- **[take](/api/operators/take)** - Takes first N values
+- **[skip](/api/operators/skip)** - Skips first N values
+- **[ignoreElements](/api/operators/ignoreElements)** - Ignores all values

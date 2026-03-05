@@ -1,0 +1,382 @@
+---
+title: 'asyncScheduler'
+description: 'Schedule tasks asynchronously using setTimeout'
+---
+
+## Overview
+
+The `asyncScheduler` scheduler schedules tasks asynchronously by putting them on the JavaScript event loop queue (macrotask queue). It uses `setTimeout` internally and is best used to delay tasks in time or to schedule tasks repeating in intervals.
+
+<Note>
+  `asyncScheduler` schedules work as if you used `setTimeout(task, duration)`. It's the default scheduler for time-based operators like `delay`, `debounceTime`, and `interval`.
+</Note>
+
+## Type
+
+```typescript
+const asyncScheduler: AsyncScheduler
+```
+
+## Usage
+
+<ParamField path="asyncScheduler.schedule" type="(work: (state?: any) => void, delay?: number, state?: any) => Subscription">
+  Schedule a task to execute asynchronously.
+  
+  - `work`: Function to execute
+  - `delay`: Delay in milliseconds (default: 0)
+  - `state`: Optional state to pass to the work function
+</ParamField>
+
+<ParamField path="asyncScheduler.now" type="() => number">
+  Returns the current time as milliseconds since Unix epoch (uses `Date.now()`).
+</ParamField>
+
+## Usage Examples
+
+### Basic Delay
+
+Delay a task using the scheduler:
+
+<CodeGroup>
+```typescript Schedule delayed task
+import { asyncScheduler } from 'rxjs';
+
+const task = () => console.log('Task executed!');
+
+asyncScheduler.schedule(task, 2000);
+
+console.log('Task scheduled');
+
+// Output:
+// Task scheduled
+// (2 second delay)
+// Task executed!
+```
+
+```typescript Immediate async execution
+import { asyncScheduler } from 'rxjs';
+
+const task = () => console.log('Async task');
+
+console.log('Before schedule');
+asyncScheduler.schedule(task); // delay = 0
+console.log('After schedule');
+
+// Output:
+// Before schedule
+// After schedule
+// Async task
+```
+</CodeGroup>
+
+### Recurring Tasks
+
+Schedule a task to repeat at intervals:
+
+```typescript
+import { asyncScheduler } from 'rxjs';
+
+function repeatingTask(state: number) {
+  console.log(state);
+  
+  // Reschedule with new state and delay
+  this.schedule(state + 1, 1000);
+}
+
+asyncScheduler.schedule(repeatingTask, 3000, 0);
+
+// Output:
+// (3 second delay)
+// 0
+// (1 second delay)
+// 1
+// (1 second delay)
+// 2
+// (1 second delay)
+// 3
+// ...
+```
+
+### With Operators
+
+Use with RxJS operators:
+
+```typescript
+import { of, observeOn, asyncScheduler } from 'rxjs';
+
+console.log('Start');
+
+of(1, 2, 3).pipe(
+  observeOn(asyncScheduler)
+).subscribe(value => {
+  console.log('Value:', value);
+});
+
+console.log('End');
+
+// Output:
+// Start
+// End
+// Value: 1
+// Value: 2
+// Value: 3
+```
+
+### Custom Delay
+
+Schedule with specific delays:
+
+```typescript
+import { asyncScheduler } from 'rxjs';
+
+const delays = [1000, 500, 2000, 100];
+const messages = ['First', 'Second', 'Third', 'Fourth'];
+
+messages.forEach((message, index) => {
+  asyncScheduler.schedule(
+    () => console.log(message),
+    delays[index]
+  );
+});
+
+// Output (in order of delays):
+// Fourth (100ms)
+// Second (500ms)
+// First (1000ms)
+// Third (2000ms)
+```
+
+### Cancellable Tasks
+
+Cancel scheduled tasks:
+
+```typescript
+import { asyncScheduler } from 'rxjs';
+
+const subscription = asyncScheduler.schedule(
+  () => console.log('This will not run'),
+  5000
+);
+
+console.log('Task scheduled');
+
+// Cancel after 2 seconds
+setTimeout(() => {
+  subscription.unsubscribe();
+  console.log('Task cancelled');
+}, 2000);
+
+// Output:
+// Task scheduled
+// Task cancelled
+```
+
+### State Management
+
+Pass state between scheduled executions:
+
+```typescript
+import { asyncScheduler } from 'rxjs';
+
+interface CountdownState {
+  count: number;
+  message: string;
+}
+
+function countdown(state: CountdownState) {
+  console.log(`${state.message}: ${state.count}`);
+  
+  if (state.count > 0) {
+    this.schedule(
+      { ...state, count: state.count - 1 },
+      1000
+    );
+  } else {
+    console.log('Liftoff!');
+  }
+}
+
+asyncScheduler.schedule(countdown, 0, {
+  count: 5,
+  message: 'T-minus'
+});
+
+// Output:
+// T-minus: 5
+// T-minus: 4
+// T-minus: 3
+// T-minus: 2
+// T-minus: 1
+// T-minus: 0
+// Liftoff!
+```
+
+## How It Works
+
+`asyncScheduler` uses `setTimeout` to schedule tasks on the macrotask queue:
+
+```typescript
+// Simplified internal implementation
+class AsyncScheduler {
+  schedule(work: Function, delay: number = 0, state?: any) {
+    const id = setTimeout(() => {
+      work.call(this, state);
+    }, delay);
+    
+    return {
+      unsubscribe: () => clearTimeout(id)
+    };
+  }
+  
+  now() {
+    return Date.now();
+  }
+}
+```
+
+## Execution Context
+
+<Tip>
+  **Macrotask Queue**: asyncScheduler uses `setTimeout`, which schedules tasks on the macrotask queue (also called task queue). This means:
+  
+  - Tasks execute after current synchronous code
+  - Tasks execute after microtasks (Promises, queueMicrotask)
+  - Good for time delays and periodic tasks
+</Tip>
+
+### Event Loop Position
+
+```typescript
+import { asyncScheduler, asapScheduler } from 'rxjs';
+
+console.log('1: Synchronous');
+
+Promise.resolve().then(() => console.log('2: Microtask'));
+
+asapScheduler.schedule(() => console.log('3: ASAP (microtask)'));
+
+asyncScheduler.schedule(() => console.log('4: Async (macrotask)'));
+
+console.log('5: Synchronous');
+
+// Output:
+// 1: Synchronous
+// 5: Synchronous
+// 2: Microtask
+// 3: ASAP (microtask)
+// 4: Async (macrotask)
+```
+
+## Common Use Cases
+
+1. **Time Delays**: Delay execution by a specific duration
+2. **Periodic Tasks**: Execute tasks at regular intervals
+3. **Async Coordination**: Defer work to next macrotask
+4. **Animation Timing**: Non-critical animations (for critical animations, use animationFrameScheduler)
+5. **Debouncing**: Time-based rate limiting
+6. **Throttling**: Limit execution frequency
+
+## Default Scheduler
+
+`asyncScheduler` is the default for many time-based operators:
+
+```typescript
+import { interval, delay, debounceTime, throttleTime } from 'rxjs';
+
+// These all use asyncScheduler by default
+interval(1000);           // Uses asyncScheduler
+delay(1000);              // Uses asyncScheduler
+debounceTime(300);        // Uses asyncScheduler
+throttleTime(500);        // Uses asyncScheduler
+
+// Can override with different scheduler
+import { queueScheduler } from 'rxjs';
+interval(1000, queueScheduler); // Use queueScheduler instead
+```
+
+## Comparison with Other Schedulers
+
+<Tip>
+  **When to use each scheduler:**
+  
+  - **asyncScheduler**: General async work, delays, intervals
+  - **asapScheduler**: Fastest async execution (microtask)
+  - **queueScheduler**: Synchronous recursive operations
+  - **animationFrameScheduler**: Browser animations (60fps)
+</Tip>
+
+| Scheduler | Queue | Timing | Use Case |
+|-----------|-------|--------|----------|
+| asyncScheduler | Macrotask | ~4ms+ | Delays, intervals |
+| asapScheduler | Microtask | &lt;1ms | Defer to next tick |
+| queueScheduler | Synchronous | Immediate | Recursive operations |
+| animationFrameScheduler | Animation frame | ~16ms | Visual animations |
+
+## Performance Considerations
+
+- `setTimeout` has a minimum delay (~4ms in browsers, per HTML spec)
+- High frequency scheduling can impact performance
+- For very fast async, use `asapScheduler` (microtask-based)
+- For animations, use `animationFrameScheduler` instead
+- Cleanup scheduled tasks to avoid memory leaks
+
+## Best Practices
+
+```typescript
+import { asyncScheduler } from 'rxjs';
+
+// ✅ Good - Clean up subscriptions
+const subscription = asyncScheduler.schedule(work, 1000);
+component.onDestroy(() => subscription.unsubscribe());
+
+// ✅ Good - Use appropriate delay
+asyncScheduler.schedule(work, 1000); // For 1s delays
+
+// ❌ Avoid - Very short delays (use asapScheduler)
+asyncScheduler.schedule(work, 0); // Better: asapScheduler.schedule(work)
+
+// ❌ Avoid - Animations (use animationFrameScheduler)
+asyncScheduler.schedule(animate, 16); // Better: animationFrameScheduler
+```
+
+## Testing
+
+Use TestScheduler for deterministic testing:
+
+```typescript
+import { TestScheduler } from 'rxjs/testing';
+import { delay } from 'rxjs/operators';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+
+testScheduler.run(({ cold, expectObservable }) => {
+  const source$ = cold('a-b-c|');
+  const expected = '---a-b-c|';
+  
+  expectObservable(
+    source$.pipe(delay(20, testScheduler))
+  ).toBe(expected);
+});
+```
+
+## Related Schedulers
+
+- [asapScheduler](/api/schedulers/asapScheduler) - Microtask-based (faster)
+- [queueScheduler](/api/schedulers/queueScheduler) - Synchronous queue
+- [animationFrameScheduler](/api/schedulers/animationFrameScheduler) - For animations
+
+## Related Operators
+
+- [delay](/api/operators/delay) - Delay emissions
+- [debounceTime](/api/operators/debounceTime) - Debounce by time
+- [throttleTime](/api/operators/throttleTime) - Throttle by time
+- [interval](/api/observables/interval) - Emit at intervals
+- [timer](/api/observables/timer) - Delay then optionally repeat
+
+## See Also
+
+- [RxJS asyncScheduler documentation](https://rxjs.dev/api/index/const/asyncScheduler)
+- [Schedulers Guide](/guides/schedulers)
+- [Event Loop Guide](/guides/event-loop)

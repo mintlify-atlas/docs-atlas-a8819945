@@ -1,0 +1,91 @@
+---
+title: 'of'
+description: 'Converts arguments to an observable sequence that emits them synchronously'
+---
+
+# of
+
+Converts the arguments to an observable sequence.
+
+## Import
+
+```typescript
+import { of } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function of<T>(value: T): Observable<T>;
+function of<A extends readonly unknown[]>(...values: A): Observable<ValueFromArray<A>>;
+```
+
+## Parameters
+
+<ParamField path="values" type="...T[]" required>
+  A comma-separated list of arguments you want to be emitted.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<T>">
+  An Observable that synchronously emits each argument and then completes.
+</ResponseField>
+
+## Description
+
+Each argument becomes a `next` notification. Unlike `from`, it does not flatten and emits each argument as-is.
+
+## Examples
+
+### Emit Multiple Values
+
+```typescript
+import { of } from 'rxjs';
+
+of(10, 20, 30).subscribe({
+  next: value => console.log('next:', value),
+  complete: () => console.log('complete')
+});
+
+// Output:
+// next: 10
+// next: 20
+// next: 30
+// complete
+```
+
+### Emit Array
+
+```typescript
+import { of } from 'rxjs';
+
+of([1, 2, 3]).subscribe(value => console.log(value));
+
+// Output:
+// [1, 2, 3]
+```
+
+## Common Use Cases
+
+### Return Static Data
+
+```typescript
+import { of } from 'rxjs';
+
+function getUser(id: string) {
+  if (id === 'cached') {
+    return of({ id: 'cached', name: 'Cached User' });
+  }
+  return ajax.getJSON(`/api/users/${id}`);
+}
+```
+
+## Related Operators
+
+- **[from](/api/creation/from)** - Convert and flatten arrays/iterables
+- **[range](/api/creation/range)** - Emit range of numbers
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/of)

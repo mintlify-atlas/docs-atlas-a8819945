@@ -1,0 +1,534 @@
+---
+title: withLatestFrom
+description: Combines source Observable with other Observables, emitting only when the source emits.
+---
+
+## Overview
+
+`withLatestFrom` combines each value from the source Observable with the latest values from other input Observables, but only emits when the source emits. All input Observables must have emitted at least once before the output Observable will emit.
+
+<Tip>
+  Use `withLatestFrom` when you have a primary stream that drives emissions and you need to sample values from other streams. Perfect for enriching events with contextual data.
+</Tip>
+
+## Type Signature
+
+```typescript
+export function withLatestFrom<T, O extends unknown[]>(
+  ...inputs: [...ObservableInputTuple<O>]
+): OperatorFunction<T, [T, ...O]>
+
+export function withLatestFrom<T, O extends unknown[], R>(
+  ...inputs: [...ObservableInputTuple<O>, (...value: [T, ...O]) => R]
+): OperatorFunction<T, R>
+```
+
+## Parameters
+
+<ParamField path="inputs" type="ObservableInputTuple<O>" required>
+  One or more Observable inputs to combine with the source Observable. The last parameter can optionally be a projection function to transform the combined values.
+</ParamField>
+
+<ParamField path="project" type="(...values: [T, ...O]) => R" optional>
+  Optional function to transform the array of combined values. Receives the source value first, followed by values from other inputs in order.
+</ParamField>
+
+## Returns
+
+`OperatorFunction<T, [T, ...O] | R>` - An operator function that returns an Observable emitting arrays (or projected values) containing the source value and latest values from other inputs, only when the source emits.
+
+## Usage Examples
+
+### Basic Example: Click with Timer Value
+
+<CodeGroup>
+```typescript Basic Usage
+import { fromEvent, interval, withLatestFrom } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const timer = interval(1000);
+const result = clicks.pipe(withLatestFrom(timer));
+
+result.subscribe(([clickEvent, timerValue]) => {
+  console.log('Click at timer value:', timerValue);
+});
+
+// Output (when clicking):
+// Click at timer value: 3
+// Click at timer value: 7
+// Click at timer value: 12
+// Only emits on clicks, not on timer ticks
+```
+
+```typescript With Projection Function
+import { fromEvent, interval, withLatestFrom } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const timer = interval(1000);
+
+const result = clicks.pipe(
+  withLatestFrom(timer, (click, time) => ({
+    timestamp: Date.now(),
+    timerValue: time
+  }))
+);
+
+result.subscribe(data => {
+  console.log('Click data:', data);
+});
+```
+</CodeGroup>
+
+### Real-World Example: Form Submission with User Context
+
+```typescript
+import { fromEvent, map, withLatestFrom, BehaviorSubject } from 'rxjs';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface FormData {
+  message: string;
+  category: string;
+}
+
+interface Submission {
+  userId: string;
+  userName: string;
+  formData: FormData;
+  timestamp: number;
+}
+
+const currentUser$ = new BehaviorSubject<User>({
+  id: 'user123',
+  name: 'John Doe',
+  email: 'john@example.com'
+});
+
+const submitButton = document.getElementById('submit') as HTMLButtonElement;
+const messageInput = document.getElementById('message') as HTMLTextAreaElement;
+const categorySelect = document.getElementById('category') as HTMLSelectElement;
+
+const formSubmit$ = fromEvent(submitButton, 'click');
+
+formSubmit$.pipe(
+  withLatestFrom(currentUser$),
+  map(([_, user]) => ({
+    userId: user.id,
+    userName: user.name,
+    formData: {
+      message: messageInput.value,
+      category: categorySelect.value
+    },
+    timestamp: Date.now()
+  }))
+).subscribe((submission: Submission) => {
+  console.log('Submitting as:', submission.userName);
+  ajax.post('/api/feedback', submission).subscribe(
+    () => console.log('Submission successful'),
+    err => console.error('Submission failed:', err)
+  );
+});
+```
+
+### Event Tracking with Session Data
+
+```typescript
+import { fromEvent, withLatestFrom, BehaviorSubject } from 'rxjs';
+
+interface SessionData {
+  sessionId: string;
+  userId: string;
+  startTime: number;
+}
+
+interface AnalyticsEvent {
+  type: string;
+  sessionId: string;
+  userId: string;
+  data: any;
+  timestamp: number;
+}
+
+const session$ = new BehaviorSubject<SessionData>({
+  sessionId: 'session-' + Math.random(),
+  userId: 'user123',
+  startTime: Date.now()
+});
+
+const buttonClicks$ = fromEvent(document.querySelectorAll('button'), 'click');
+const linkClicks$ = fromEvent(document.querySelectorAll('a'), 'click');
+const formSubmits$ = fromEvent(document.querySelectorAll('form'), 'submit');
+
+function trackEvent(eventType: string, element: Element) {
+  return new Observable(subscriber => {
+    subscriber.next({
+      type: eventType,
+      element: element.tagName,
+      id: element.id,
+      text: element.textContent?.slice(0, 50)
+    });
+  });
+}
+
+buttonClicks$.pipe(
+  withLatestFrom(session$),
+  map(([event, session]) => ({
+    type: 'button_click',
+    sessionId: session.sessionId,
+    userId: session.userId,
+    data: {
+      buttonId: (event.target as HTMLElement).id,
+      buttonText: (event.target as HTMLElement).textContent
+    },
+    timestamp: Date.now()
+  }))
+).subscribe((analyticsEvent: AnalyticsEvent) => {
+  console.log('Analytics event:', analyticsEvent);
+  sendToAnalytics(analyticsEvent);
+});
+```
+
+### Save Document with Version Info
+
+```typescript
+import { fromEvent, withLatestFrom, BehaviorSubject, debounceTime } from 'rxjs';
+
+interface Document {
+  id: string;
+  content: string;
+  version: number;
+  lastModified: number;
+}
+
+interface SaveOperation {
+  documentId: string;
+  content: string;
+  version: number;
+  author: string;
+}
+
+const currentDocument$ = new BehaviorSubject<Document>({
+  id: 'doc123',
+  content: '',
+  version: 1,
+  lastModified: Date.now()
+});
+
+const currentUser$ = new BehaviorSubject({ id: 'user123', name: 'John Doe' });
+
+const editor = document.getElementById('editor') as HTMLTextAreaElement;
+const saveButton = document.getElementById('save') as HTMLButtonElement;
+
+// Manual save on button click
+const manualSave$ = fromEvent(saveButton, 'click');
+
+// Auto-save on content change
+const contentChange$ = fromEvent(editor, 'input').pipe(
+  debounceTime(2000)
+);
+
+// Merge both save triggers
+merge(manualSave$, contentChange$).pipe(
+  withLatestFrom(currentDocument$, currentUser$),
+  map(([_, document, user]) => ({
+    documentId: document.id,
+    content: editor.value,
+    version: document.version + 1,
+    author: user.name
+  }))
+).subscribe((saveOp: SaveOperation) => {
+  console.log('Saving document version:', saveOp.version);
+  
+  ajax.post('/api/documents/save', saveOp).subscribe(
+    response => {
+      console.log('Save successful');
+      currentDocument$.next({
+        ...currentDocument$.value,
+        content: saveOp.content,
+        version: saveOp.version,
+        lastModified: Date.now()
+      });
+    },
+    err => console.error('Save failed:', err)
+  );
+});
+```
+
+## Practical Scenarios
+
+<Note>
+  The key difference between `withLatestFrom` and `combineLatestWith`: `withLatestFrom` only emits when the **source** emits, while `combineLatestWith` emits when **any** input emits.
+</Note>
+
+### Scenario 1: Mouse Drag with Initial Position
+
+```typescript
+import { fromEvent, withLatestFrom, map, takeUntil } from 'rxjs';
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface DragData {
+  start: Position;
+  current: Position;
+  delta: Position;
+}
+
+const mouseDown$ = fromEvent<MouseEvent>(document, 'mousedown');
+const mouseMove$ = fromEvent<MouseEvent>(document, 'mousemove');
+const mouseUp$ = fromEvent<MouseEvent>(document, 'mouseup');
+
+const drag$ = mouseDown$.pipe(
+  switchMap(startEvent => {
+    const startPos = {
+      x: startEvent.clientX,
+      y: startEvent.clientY
+    };
+
+    return mouseMove$.pipe(
+      withLatestFrom(of(startPos)),
+      map(([moveEvent, start]) => ({
+        start,
+        current: {
+          x: moveEvent.clientX,
+          y: moveEvent.clientY
+        },
+        delta: {
+          x: moveEvent.clientX - start.x,
+          y: moveEvent.clientY - start.y
+        }
+      })),
+      takeUntil(mouseUp$)
+    );
+  })
+);
+
+drag$.subscribe((dragData: DragData) => {
+  console.log('Dragging:', dragData.delta);
+  updateDraggableElement(dragData.delta.x, dragData.delta.y);
+});
+```
+
+### Scenario 2: Purchase with Shopping Cart
+
+```typescript
+import { fromEvent, withLatestFrom, BehaviorSubject } from 'rxjs';
+
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface Cart {
+  items: CartItem[];
+  total: number;
+}
+
+interface PurchaseRequest {
+  items: CartItem[];
+  total: number;
+  paymentMethod: string;
+  shippingAddress: string;
+}
+
+const cart$ = new BehaviorSubject<Cart>({
+  items: [],
+  total: 0
+});
+
+const checkoutButton = document.getElementById('checkout') as HTMLButtonElement;
+const paymentSelect = document.getElementById('payment') as HTMLSelectElement;
+const addressInput = document.getElementById('address') as HTMLInputElement;
+
+fromEvent(checkoutButton, 'click').pipe(
+  withLatestFrom(cart$),
+  map(([_, cart]) => ({
+    items: cart.items,
+    total: cart.total,
+    paymentMethod: paymentSelect.value,
+    shippingAddress: addressInput.value
+  }))
+).subscribe((purchase: PurchaseRequest) => {
+  console.log('Processing purchase:', purchase);
+  
+  if (purchase.items.length === 0) {
+    alert('Cart is empty');
+    return;
+  }
+  
+  ajax.post('/api/checkout', purchase).subscribe(
+    response => {
+      console.log('Purchase successful:', response);
+      cart$.next({ items: [], total: 0 });
+      showConfirmation(response);
+    },
+    err => {
+      console.error('Purchase failed:', err);
+      showError(err.message);
+    }
+  );
+});
+```
+
+### Scenario 3: Search with Filters
+
+```typescript
+import { fromEvent, withLatestFrom, BehaviorSubject, debounceTime, distinctUntilChanged } from 'rxjs';
+
+interface SearchFilters {
+  category: string;
+  minPrice: number;
+  maxPrice: number;
+  inStock: boolean;
+}
+
+interface SearchParams {
+  query: string;
+  filters: SearchFilters;
+}
+
+const filters$ = new BehaviorSubject<SearchFilters>({
+  category: 'all',
+  minPrice: 0,
+  maxPrice: 1000,
+  inStock: false
+});
+
+const searchInput = document.getElementById('search') as HTMLInputElement;
+
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(e => (e.target as HTMLInputElement).value),
+  debounceTime(300),
+  distinctUntilChanged(),
+  withLatestFrom(filters$),
+  map(([query, filters]) => ({ query, filters }))
+);
+
+search$.subscribe((params: SearchParams) => {
+  console.log('Searching with params:', params);
+  
+  ajax.getJSON(`/api/search`, {
+    q: params.query,
+    ...params.filters
+  }).subscribe(
+    results => displaySearchResults(results),
+    err => console.error('Search failed:', err)
+  );
+});
+
+// Update filters
+const categorySelect = document.getElementById('category') as HTMLSelectElement;
+fromEvent(categorySelect, 'change').subscribe(() => {
+  filters$.next({
+    ...filters$.value,
+    category: categorySelect.value
+  });
+});
+```
+
+### Scenario 4: Collaborative Editing with User Cursor
+
+```typescript
+import { fromEvent, withLatestFrom, BehaviorSubject, throttleTime } from 'rxjs';
+
+interface CursorPosition {
+  userId: string;
+  userName: string;
+  line: number;
+  column: number;
+  color: string;
+}
+
+const currentUser$ = new BehaviorSubject({
+  id: 'user123',
+  name: 'John Doe',
+  color: '#3498db'
+});
+
+const editor = document.getElementById('editor') as HTMLTextAreaElement;
+
+fromEvent(editor, 'click').pipe(
+  throttleTime(100),
+  withLatestFrom(currentUser$),
+  map(([event, user]) => {
+    const target = event.target as HTMLTextAreaElement;
+    const position = target.selectionStart;
+    const text = target.value;
+    const lines = text.substring(0, position).split('\n');
+    
+    return {
+      userId: user.id,
+      userName: user.name,
+      line: lines.length,
+      column: lines[lines.length - 1].length,
+      color: user.color
+    };
+  })
+).subscribe((cursor: CursorPosition) => {
+  console.log('Cursor position:', cursor);
+  broadcastCursorPosition(cursor);
+});
+```
+
+## Behavior Details
+
+### Emission Requirements
+
+<Warning>
+  The output Observable will not emit until ALL input Observables have emitted at least once. Use `startWith` on inputs if you need immediate emissions.
+</Warning>
+
+```typescript
+import { Subject, withLatestFrom } from 'rxjs';
+
+const source$ = new Subject();
+const other$ = new Subject();
+
+const result$ = source$.pipe(withLatestFrom(other$));
+
+result$.subscribe(console.log);
+
+source$.next(1); // No emission - other$ hasn't emitted yet
+source$.next(2); // No emission - other$ hasn't emitted yet
+other$.next('a'); // No emission - source$ drove previous emissions
+source$.next(3); // Emits: [3, 'a']
+other$.next('b'); // No emission - only source drives emissions
+source$.next(4); // Emits: [4, 'b']
+```
+
+### Completion Behavior
+
+- Output completes when the **source** Observable completes
+- Completion of other input Observables doesn't affect the output
+- If source errors, the error is propagated immediately
+
+```typescript
+import { of, interval, withLatestFrom, take } from 'rxjs';
+
+const source$ = interval(1000).pipe(take(3));
+const neverEnding$ = interval(500);
+
+source$.pipe(
+  withLatestFrom(neverEnding$)
+).subscribe({
+  next: console.log,
+  complete: () => console.log('Complete!')
+});
+// Completes after source completes, even though neverEnding$ continues
+```
+
+## Related Operators
+
+- [`combineLatestWith`](/api/operators/combineLatestWith) - Emits when any source emits (not just the primary)
+- [`combineLatest`](/api/operators/combineLatest) - Static version for combining multiple Observables
+- [`sample`](/api/operators/sample) - Similar but accepts a notifier Observable
+- [`zip`](/api/operators/zip) - Combines by index instead of latest values
+- [`forkJoin`](/api/operators/forkJoin) - Waits for all to complete, emits once

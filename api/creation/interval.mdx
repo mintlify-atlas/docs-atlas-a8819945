@@ -1,0 +1,149 @@
+---
+title: 'interval'
+description: 'Creates an Observable that emits sequential numbers at specified intervals'
+---
+
+# interval
+
+Creates an Observable that emits sequential numbers every specified interval of time.
+
+## Import
+
+```typescript
+import { interval } from 'rxjs';
+```
+
+## Type Signature
+
+```typescript
+function interval(
+  period: number = 0,
+  scheduler: SchedulerLike = asyncScheduler
+): Observable<number>;
+```
+
+## Parameters
+
+<ParamField path="period" type="number" default="0">
+  The interval size in milliseconds (by default) between emissions.
+</ParamField>
+
+<ParamField path="scheduler" type="SchedulerLike" default="asyncScheduler">
+  The scheduler to use for scheduling emissions and providing notion of time.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable" type="Observable<number>">
+  An Observable that emits an infinite sequence of ascending integers (0, 1, 2, ...) at the specified interval.
+</ResponseField>
+
+## Description
+
+`interval` returns an Observable that emits an infinite sequence of ascending integers, with a constant interval of time between emissions.
+
+**Key characteristics:**
+- Starts emitting after the first period (not immediately)
+- Emits incrementing numbers: 0, 1, 2, 3, ...
+- Never completes (infinite sequence)
+- Uses `asyncScheduler` by default (setTimeout)
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { interval } from 'rxjs';
+import { take } from 'rxjs/operators';
+
+const numbers$ = interval(1000).pipe(take(4));
+
+numbers$.subscribe(x => console.log('Next:', x));
+
+// Output (one per second):
+// Next: 0  (after 1s)
+// Next: 1  (after 2s)
+// Next: 2  (after 3s)
+// Next: 3  (after 4s)
+```
+
+### Countdown Timer
+
+```typescript
+import { interval } from 'rxjs';
+import { map, take } from 'rxjs/operators';
+
+const countdown$ = interval(1000).pipe(
+  map(n => 10 - n),
+  take(11)
+);
+
+countdown$.subscribe({
+  next: x => console.log(x),
+  complete: () => console.log('Time\'s up!')
+});
+
+// Output: 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, Time's up!
+```
+
+### Polling API
+
+```typescript
+import { interval } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+import { ajax } from 'rxjs/ajax';
+
+const poll$ = interval(5000).pipe(
+  switchMap(() => ajax.getJSON('/api/status'))
+);
+
+poll$.subscribe(status => {
+  console.log('Status:', status);
+});
+// Polls the API every 5 seconds
+```
+
+## Common Use Cases
+
+### Auto-Save
+
+```typescript
+import { interval, fromEvent } from 'rxjs';
+import { switchMap, debounce } from 'rxjs/operators';
+
+const changes$ = fromEvent(editor, 'change');
+
+const autoSave$ = changes$.pipe(
+  debounce(() => interval(2000))
+);
+
+autoSave$.subscribe(() => {
+  console.log('Auto-saving...');
+  saveDocument();
+});
+```
+
+### Real-time Clock
+
+```typescript
+import { interval } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const clock$ = interval(1000).pipe(
+  map(() => new Date().toLocaleTimeString())
+);
+
+clock$.subscribe(time => {
+  document.querySelector('#clock').textContent = time;
+});
+```
+
+## Related Operators
+
+- **[timer](/api/creation/timer)** - Emit after delay, optionally repeat
+- **[range](/api/creation/range)** - Emit sequence of numbers
+- **[generate](/api/creation/generate)** - Generate sequence with loop
+
+## See Also
+
+- [Official RxJS Documentation](https://rxjs.dev/api/index/function/interval)

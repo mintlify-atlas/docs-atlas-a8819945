@@ -1,0 +1,193 @@
+---
+title: audit
+description: Rate-limiting operator that emits the most recent value after a duration determined by another Observable
+---
+
+## Overview
+
+Ignores source values for a duration determined by another Observable, then emits the most recent value from the source Observable, then repeats this process.
+
+<Note>
+`audit` is similar to `throttle`, but emits the **last** value from the silenced time window, instead of the first value. This makes it useful when you want to capture the final state after a burst of activity.
+</Note>
+
+## Type Signature
+
+```typescript
+function audit<T>(
+  durationSelector: (value: T) => ObservableInput<any>
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="durationSelector" type="(value: T) => ObservableInput<any>" required>
+  A function that receives a value from the source Observable, for computing the silencing duration, returned as an Observable or a Promise.
+  
+  The function is called with each source value when the internal timer is disabled. The returned Observable determines how long to wait before emitting the most recent value.
+</ParamField>
+
+## Returns
+
+**`MonoTypeOperatorFunction<T>`** - A function that returns an Observable that performs rate-limiting of emissions from the source Observable.
+
+## How It Works
+
+1. Initially, the internal timer is **disabled**
+2. When the first source value arrives, the timer is **enabled** by calling `durationSelector(value)`
+3. While the timer is enabled, all subsequent source values are **ignored** (but the most recent is cached)
+4. When the duration Observable emits, the timer is **disabled** and the **most recent** cached value is emitted
+5. This process repeats for the next source value
+
+<Tip>
+Use `audit` when you want to capture the final state after rapid changes, such as the final scroll position after scrolling, or the last search term after rapid typing.
+</Tip>
+
+## Usage Examples
+
+### Basic Example: Rate-limit Clicks
+
+```typescript
+import { fromEvent, audit, interval } from 'rxjs';
+
+const clicks = fromEvent(document, 'click');
+const result = clicks.pipe(
+  audit(ev => interval(1000))
+);
+
+result.subscribe(x => console.log(x));
+// Emits click events at most once per second, emitting the last click in each window
+```
+
+### Dynamic Duration Based on Value
+
+```typescript
+import { fromEvent, audit, interval } from 'rxjs';
+
+interface ScrollEvent extends Event {
+  deltaY: number;
+}
+
+const scrolls = fromEvent<ScrollEvent>(document, 'wheel');
+const result = scrolls.pipe(
+  audit(event => {
+    // Longer wait for larger scroll deltas
+    const duration = Math.abs(event.deltaY) * 10;
+    return interval(duration);
+  })
+);
+
+result.subscribe(event => {
+  console.log('Final scroll position after burst:', event);
+});
+```
+
+### Capture Final Search Term
+
+```typescript
+import { fromEvent, audit, timer, map } from 'rxjs';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+const search$ = fromEvent(searchInput, 'input').pipe(
+  map(event => (event.target as HTMLInputElement).value),
+  audit(() => timer(500)) // Wait 500ms of silence
+);
+
+search$.subscribe(term => {
+  console.log('Search for:', term);
+  // Make API call with final search term
+});
+```
+
+<CodeGroup>
+```typescript API Request
+import { fromEvent, audit, timer, map, switchMap } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
+
+const searchInput = document.querySelector('#search') as HTMLInputElement;
+
+const searchResults$ = fromEvent(searchInput, 'input').pipe(
+  map(event => (event.target as HTMLInputElement).value),
+  audit(() => timer(300)),
+  switchMap(term => 
+    ajax.getJSON(`/api/search?q=${encodeURIComponent(term)}`)
+  )
+);
+
+searchResults$.subscribe(results => {
+  console.log('Search results:', results);
+});
+```
+
+```typescript Mouse Tracking
+import { fromEvent, audit, interval } from 'rxjs';
+
+const mouseMoves = fromEvent<MouseEvent>(document, 'mousemove');
+const sampledMoves = mouseMoves.pipe(
+  audit(() => interval(100)) // Sample every 100ms
+);
+
+sampledMoves.subscribe(event => {
+  console.log('Mouse position:', event.clientX, event.clientY);
+});
+```
+</CodeGroup>
+
+## When to Use
+
+### Use `audit` when:
+- You want to capture the **final state** after a burst of events
+- You need **dynamic duration** based on the emitted value
+- You want to reduce the rate of events but keep the most recent value
+- Tracking scroll position, mouse movements, or resize events
+
+### Don't use `audit` when:
+- You want the **first** value in each window (use `throttle` instead)
+- You need a **fixed time** duration (use `auditTime` instead)
+- You want to wait for silence (use `debounce` instead)
+- Every value matters (use `buffer` or `bufferTime` instead)
+
+## Common Patterns
+
+### Scroll Position Tracking
+
+```typescript
+import { fromEvent, audit, timer } from 'rxjs';
+
+const scroll$ = fromEvent(window, 'scroll').pipe(
+  audit(() => timer(200))
+);
+
+scroll$.subscribe(() => {
+  const scrollPos = window.scrollY;
+  console.log('Final scroll position:', scrollPos);
+  // Save scroll position, update UI, etc.
+});
+```
+
+### Window Resize Handler
+
+```typescript
+import { fromEvent, audit, timer } from 'rxjs';
+
+const resize$ = fromEvent(window, 'resize').pipe(
+  audit(() => timer(300))
+);
+
+resize$.subscribe(() => {
+  console.log('Window resized to:', window.innerWidth, window.innerHeight);
+  // Recalculate layout, update charts, etc.
+});
+```
+
+<Warning>
+The `durationSelector` function should return an Observable that completes or emits at least one value. If it never emits, the cached value will never be released.
+</Warning>
+
+## Related Operators
+
+- **[auditTime](/api/operators/auditTime)** - Same behavior but with a fixed duration
+- **[throttle](/api/operators/throttle)** - Emits the **first** value instead of the last
+- **[throttleTime](/api/operators/throttleTime)** - Like throttle but with fixed duration
+- **[debounce](/api/operators/debounce)** - Waits for silence before emitting
+- **[sample](/api/operators/sample)** - Samples when another Observable emits

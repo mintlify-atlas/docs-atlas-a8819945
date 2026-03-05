@@ -1,0 +1,275 @@
+---
+title: 'observeOn'
+description: 'Re-emit notifications on a specified scheduler'
+---
+
+## Overview
+
+The `observeOn` operator re-emits all notifications (next, error, and complete) from the source Observable using a specified scheduler. This allows you to control when and how notifications are delivered to observers.
+
+<Note>
+  Unlike `subscribeOn` (which affects when subscription happens), `observeOn` affects when **notifications** are delivered to subscribers.
+</Note>
+
+## Signature
+
+```typescript
+function observeOn<T>(
+  scheduler: SchedulerLike,
+  delay: number = 0
+): MonoTypeOperatorFunction<T>
+```
+
+## Parameters
+
+<ParamField path="scheduler" type="SchedulerLike" required>
+  The scheduler that will be used to reschedule notifications from the source Observable. Common schedulers:
+  
+  - `asyncScheduler` - Uses `setTimeout`
+  - `asapScheduler` - Uses microtasks (Promise.resolve)
+  - `queueScheduler` - Synchronous queue
+  - `animationFrameScheduler` - Uses `requestAnimationFrame`
+</ParamField>
+
+<ParamField path="delay" type="number" default="0">
+  Number of milliseconds to delay each notification. This is in addition to the scheduler's natural timing.
+</ParamField>
+
+## Returns
+
+<ParamField path="return" type="MonoTypeOperatorFunction<T>">
+  A function that returns an Observable that emits the same notifications as the source, but rescheduled with the provided scheduler.
+</ParamField>
+
+## Usage Examples
+
+### Smooth Browser Animations
+
+Ensure values are emitted just before browser repaint:
+
+<CodeGroup>
+```typescript Animation frame
+import { interval, observeOn, animationFrameScheduler } from 'rxjs';
+
+const someDiv = document.createElement('div');
+someDiv.style.cssText = 'width: 200px; background: #09c';
+document.body.appendChild(someDiv);
+
+const intervals = interval(10); // Default async scheduler
+
+intervals.pipe(
+  observeOn(animationFrameScheduler) // Observe on animation frame
+).subscribe(val => {
+  someDiv.style.height = val + 'px';
+});
+// Ensures smooth 60fps animation
+```
+
+```typescript Async scheduling
+import { of, observeOn, asyncScheduler } from 'rxjs';
+
+of(1, 2, 3).pipe(
+  observeOn(asyncScheduler)
+).subscribe(console.log);
+
+console.log('After subscribe');
+
+// Output:
+// After subscribe
+// 1
+// 2
+// 3
+```
+</CodeGroup>
+
+### Delayed Notifications
+
+Add delay to all notifications including errors:
+
+```typescript
+import { of, observeOn, asyncScheduler, concat, throwError } from 'rxjs';
+
+concat(
+  of(1, 2, 3),
+  throwError(() => new Error('Error!'))
+).pipe(
+  observeOn(asyncScheduler, 1000)
+).subscribe({
+  next: val => console.log(`${Date.now()}: ${val}`),
+  error: err => console.log(`${Date.now()}: ${err.message}`)
+});
+
+// All notifications delayed by 1000ms, including error
+```
+
+### Testing with Virtual Scheduler
+
+Control timing in tests:
+
+```typescript
+import { of, observeOn } from 'rxjs';
+import { TestScheduler } from 'rxjs/testing';
+
+const testScheduler = new TestScheduler((actual, expected) => {
+  expect(actual).toEqual(expected);
+});
+
+testScheduler.run(({ expectObservable }) => {
+  const source$ = of(1, 2, 3).pipe(
+    observeOn(testScheduler)
+  );
+  
+  expectObservable(source$).toBe('(abc|)', { a: 1, b: 2, c: 3 });
+});
+```
+
+### Processing in Batches
+
+Prevent blocking the main thread:
+
+```typescript
+import { from, observeOn, asyncScheduler } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+const hugeArray = Array.from({ length: 1000000 }, (_, i) => i);
+
+from(hugeArray).pipe(
+  map(x => heavyComputation(x)),
+  observeOn(asyncScheduler) // Reschedule after each item
+).subscribe(result => {
+  updateUI(result);
+  // UI remains responsive
+});
+
+function heavyComputation(x: number): number {
+  // Expensive operation
+  return x * x;
+}
+```
+
+## How It Works
+
+`observeOn` schedules each notification (next, error, complete) on the specified scheduler:
+
+```typescript
+export function observeOn<T>(scheduler: SchedulerLike, delay = 0): MonoTypeOperatorFunction<T> {
+  return (source) =>
+    new Observable((destination) => {
+      source.subscribe(
+        operate({
+          destination,
+          next: (value) => executeSchedule(destination, scheduler, () => destination.next(value), delay),
+          error: (err) => executeSchedule(destination, scheduler, () => destination.error(err), delay),
+          complete: () => executeSchedule(destination, scheduler, () => destination.complete(), delay),
+        })
+      );
+    });
+}
+```
+
+Each notification is wrapped in a scheduled task, ensuring it's delivered according to the scheduler's timing.
+
+## Difference: observeOn vs delay
+
+<Warning>
+  Key difference: `observeOn` delays **all notifications including errors**, while `delay` passes errors through immediately.
+</Warning>
+
+| Feature | observeOn | delay |
+|---------|-----------|-------|
+| Delays next | ✅ | ✅ |
+| Delays complete | ✅ | ❌ (immediate) |
+| Delays error | ✅ | ❌ (immediate) |
+| Purpose | Control scheduler | Add time delay |
+| Use case | Execution context | Time shifting |
+
+```typescript
+import { of, throwError, concat, observeOn, delay, asyncScheduler } from 'rxjs';
+
+// With observeOn - error is delayed
+concat(
+  of(1),
+  throwError(() => new Error('Oops'))
+).pipe(
+  observeOn(asyncScheduler, 1000)
+).subscribe({
+  next: console.log,
+  error: err => console.log('Error after 1s:', err.message)
+});
+
+// With delay - error is immediate  
+concat(
+  of(1),
+  throwError(() => new Error('Oops'))
+).pipe(
+  delay(1000)
+).subscribe({
+  next: console.log,
+  error: err => console.log('Error immediately:', err.message)
+});
+```
+
+## Common Use Cases
+
+1. **Smooth Animations**: Use `animationFrameScheduler` for 60fps animations
+2. **UI Responsiveness**: Prevent blocking with `asyncScheduler`
+3. **Debouncing Work**: Control when expensive operations run
+4. **Testing**: Use `TestScheduler` for deterministic timing
+5. **Event Loop Control**: Manage execution order and timing
+
+## Scheduler Comparison
+
+<Tip>
+  Choose the right scheduler for your use case:
+  
+  - **animationFrameScheduler**: Browser animations (60fps)
+  - **asapScheduler**: Microtask queue (fastest async)
+  - **asyncScheduler**: Macro task queue (setTimeout)
+  - **queueScheduler**: Synchronous queue (testing)
+</Tip>
+
+| Scheduler | Timing | Use Case |
+|-----------|--------|----------|
+| `animationFrameScheduler` | Before browser repaint (~16ms) | Animations, visual updates |
+| `asapScheduler` | Microtask queue (Promise) | Defer to next microtask |
+| `asyncScheduler` | Macrotask queue (setTimeout) | General async operations |
+| `queueScheduler` | Synchronous | Recursive operations, testing |
+
+## Performance Considerations
+
+<Warning>
+  Using `observeOn` on high-frequency Observables creates many scheduled tasks. Consider throttling or buffering first.
+</Warning>
+
+- Each notification creates a scheduled task
+- For high-frequency sources (e.g., mouse move), consider `throttleTime` or `auditTime` first
+- Schedulers add overhead - use only when needed
+- Animation frame scheduler is optimized for 60fps
+
+## Best Practices
+
+1. **Place strategically**: Put `observeOn` where you need to change execution context
+2. **Combine with throttling**: For high-frequency events, throttle before observeOn
+3. **Use appropriate scheduler**: Match scheduler to use case
+4. **Avoid overuse**: Only reschedule when necessary
+5. **Consider delay operator**: If you only need time delay (not scheduler control), use `delay`
+
+## Related Operators
+
+- [subscribeOn](/api/operators/subscribeOn) - Control subscription scheduler
+- [delay](/api/operators/delay) - Delay values (but not errors)
+- [throttleTime](/api/operators/throttleTime) - Limit emission rate
+- [debounceTime](/api/operators/debounceTime) - Delay after silence
+
+## Related Schedulers
+
+- [asyncScheduler](/api/schedulers/asyncScheduler) - setTimeout-based
+- [asapScheduler](/api/schedulers/asapScheduler) - Microtask-based
+- [queueScheduler](/api/schedulers/queueScheduler) - Synchronous queue
+- [animationFrameScheduler](/api/schedulers/animationFrameScheduler) - requestAnimationFrame
+
+## See Also
+
+- [RxJS observeOn documentation](https://rxjs.dev/api/operators/observeOn)
+- [Schedulers Guide](/guides/schedulers)
+- [Performance Optimization Guide](/guides/performance)
