@@ -316,11 +316,9 @@ const betterNumbers$ = interval(100).pipe(
 |----------|----------|--------------|----------|
 | `distinct` | All previous values | **High** (grows over time) | Unique values across entire stream |
 | `distinctUntilChanged` | Only previous value | **Low** (constant) | Filter consecutive duplicates |
-| `distinctUntilKeyChanged` | Only previous key | **Low** (constant) | Filter consecutive duplicates by key |
 
 ## Related Operators
 
 - **[distinctUntilChanged](/api/operators/distinctUntilChanged)** - Only compares consecutive values (memory efficient)
-- **[distinctUntilKeyChanged](/api/operators/distinctUntilKeyChanged)** - Consecutive comparison with key selector
 - **[filter](/api/operators/filter)** - General purpose filtering
 - **[take](/api/operators/take)** - Limit number of emissions
